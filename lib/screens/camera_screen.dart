@@ -79,32 +79,44 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     await _open(_cameras[_camIndex]);
   }
 
-  Future<void> _open(CameraDescription cam) async {
-    final old = _controller;
-    _controller = null;
-    if (mounted) setState(() => _error = null);
-    await old?.dispose();
+  /// 카메라를 켜는 중인지. 처음 실행 때 권한 창이 떴다 닫히면 앱이 inactive → resumed 가 되는데,
+  /// 그때 켜는 중인 카메라를 하나 더 켜지 않게 막는다 (두 개가 겹치면 화면이 까맣게 된다).
+  bool _opening = false;
 
-    final c = CameraController(cam, ResolutionPreset.high, enableAudio: false);
+  Future<void> _open(CameraDescription cam) async {
+    if (_opening) return;
+    _opening = true;
     try {
-      await c.initialize();
-    } on CameraException catch (e) {
-      await c.dispose();
-      if (!mounted) return;
-      setState(() {
-        _error = switch (e.code) {
-          'CameraAccessDenied' || 'CameraAccessDeniedWithoutPrompt' || 'CameraAccessRestricted' =>
-            'access denied: camera\n설정 > camera.exe 에서 카메라를 허용해 주세요.',
-          _ => e.description ?? e.code,
-        };
-      });
-      return;
+      final old = _controller;
+      _controller = null;
+      if (mounted) setState(() => _error = null);
+      await old?.dispose();
+
+      final c = CameraController(cam, ResolutionPreset.high, enableAudio: false);
+      try {
+        await c.initialize();
+      } on CameraException catch (e) {
+        await c.dispose();
+        if (!mounted) return;
+        setState(() {
+          _error = switch (e.code) {
+            'CameraAccessDenied' || 'CameraAccessDeniedWithoutPrompt' || 'CameraAccessRestricted' =>
+              'access denied: camera\n설정 > camera.exe 에서 카메라를 허용해 주세요.',
+            _ => e.description ?? e.code,
+          };
+        });
+        return;
+      }
+      // 켜는 사이 앱이 닫혔거나(화면 없음) 뒤로 갔으면 바로 놓는다. 돌아오면 resumed 에서 다시 켠다.
+      final life = WidgetsBinding.instance.lifecycleState;
+      if (!mounted || (life != null && life != AppLifecycleState.resumed && life != AppLifecycleState.inactive)) {
+        await c.dispose();
+        return;
+      }
+      setState(() => _controller = c);
+    } finally {
+      _opening = false;
     }
-    if (!mounted) {
-      await c.dispose();
-      return;
-    }
-    setState(() => _controller = c);
   }
 
   Future<void> _flip() async {

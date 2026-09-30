@@ -44,3 +44,23 @@ jobs:
           name: camera-exe-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+  ios-build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare platform folders
+        run: bash tool/setup_platforms.sh
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign

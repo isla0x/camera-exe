@@ -12,7 +12,10 @@ import 'package:share_plus/share_plus.dart';
 
 import '../logic/capture_mode.dart';
 import '../logic/filters.dart';
+import '../logic/print_timeline.dart';
+import '../logic/video_writer.dart';
 import '../theme/palette.dart';
+import '../widgets/print_video_frame.dart';
 import '../widgets/result_card.dart';
 import '../widgets/retro.dart';
 
@@ -61,6 +64,12 @@ class _PrintScreenState extends State<PrintScreen> {
   bool _saving = false;
   String? _savedMsg;
   bool _savedIsError = false;
+
+  /// .MP4 만드는 중: 화면 밖(덮개 아래)에 영상 장면을 그려 한 장씩 뜬다.
+  final _videoKey = GlobalKey();
+  PrintFrame? _videoFrame;
+  bool _encoding = false;
+  double _encProgress = 0;
 
   String get _fileName {
     final d = widget.takenAt;
@@ -160,6 +169,89 @@ class _PrintScreenState extends State<PrintScreen> {
     }
   }
 
+  /// 출력 과정을 세로 영상(.MP4)으로 만들어 사진 앱에 저장한다.
+  Future<void> _saveVideo() async {
+    final photo = _photo;
+    if (!_done || photo == null || _encoding || _saving) return;
+    final timeline = timelineFor(photo.shot);
+    setState(() {
+      _encoding = true;
+      _encProgress = 0;
+      _savedMsg = null;
+      _videoFrame = timeline.frameAt(0);
+    });
+    File? file;
+    VideoWriter? writer;
+    try {
+      if (!await Gal.hasAccess()) {
+        final ok = await Gal.requestAccess();
+        if (!ok) throw const _UserError('access denied: photos\n설정 > camera.exe 에서 사진 추가를 허용해 주세요.');
+      }
+      final dir = await getTemporaryDirectory();
+      final name = videoName(photo.fileName);
+      file = File('${dir.path}/${name.replaceAll('.MP4', '.mp4')}');
+      if (await file.exists()) await file.delete();
+
+      writer = await VideoWriter.open(file.path, fps: timeline.fps);
+      final scale = writer.width / PrintVideoFrame.size.width;
+      Uint8List? rgba;
+      String? shownKey;
+      final count = timeline.frameCount;
+      for (var i = 0; i < count; i++) {
+        if (!mounted) throw const _UserError('canceled');
+        final f = timeline.frameAt(i);
+        // 화면이 바뀐 프레임만 새로 그린다. 나머지는 앞 그림을 그대로 쓴다.
+        if (f.key != shownKey || rgba == null) {
+          setState(() => _videoFrame = f);
+          await WidgetsBinding.instance.endOfFrame;
+          rgba = await _grabVideoFrame(scale, writer.width, writer.height);
+          shownKey = f.key;
+        }
+        await writer.add(rgba);
+        if (i % 6 == 0 && mounted) setState(() => _encProgress = i / count);
+      }
+      await writer.close();
+      writer = null;
+      await Gal.putVideo(file.path);
+      _setSaved(r'saved to C:\PICS\' + name);
+      HapticFeedback.mediumImpact();
+    } on _UserError catch (e) {
+      _setSaved(e.message, error: true);
+    } on GalException catch (e) {
+      _setSaved('save failed: ${e.type.message}', error: true);
+    } catch (e) {
+      _setSaved('.mp4 failed: $e', error: true);
+    } finally {
+      await writer?.abort();
+      if (file != null) {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          _encoding = false;
+          _videoFrame = null;
+        });
+      }
+    }
+  }
+
+  /// 덮개 아래에 그려 둔 영상 장면을 RGBA 로 뜬다.
+  Future<Uint8List> _grabVideoFrame(double scale, int width, int height) async {
+    final boundary = _videoKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final image = await boundary.toImage(pixelRatio: scale);
+    try {
+      if (image.width != width || image.height != height) {
+        throw StateError('frame ${image.width}x${image.height} != ${width}x$height');
+      }
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      return data!.buffer.asUint8List();
+    } finally {
+      image.dispose();
+    }
+  }
+
   Future<void> _share() async {
     if (!_done) return;
     try {
@@ -189,7 +281,10 @@ class _PrintScreenState extends State<PrintScreen> {
     });
   }
 
-  void _close() => Navigator.of(context).pop(_photo);
+  void _close() {
+    if (_encoding) return; // 영상 만드는 중에는 나가지 않는다.
+    Navigator.of(context).pop(_photo);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -200,7 +295,29 @@ class _PrintScreenState extends State<PrintScreen> {
       },
       child: Scaffold(
         backgroundColor: Palette.bg,
-        body: SafeArea(
+        body: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 영상 장면: 만드는 동안만 그리고, 아래 덮개가 가린다.
+            if (_videoFrame != null && _photo != null)
+              Positioned(
+                left: 0,
+                top: 0,
+                width: PrintVideoFrame.size.width,
+                height: PrintVideoFrame.size.height,
+                child: IgnorePointer(
+                  child: RepaintBoundary(
+                    key: _videoKey,
+                    child: PrintVideoFrame(
+                      shot: _photo!.shot,
+                      fileName: _photo!.fileName,
+                      takenAt: _photo!.takenAt,
+                      frame: _videoFrame!,
+                    ),
+                  ),
+                ),
+              ),
+            Positioned.fill(child: ColoredBox(color: Palette.bg, child: SafeArea(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _skip,
@@ -216,6 +333,57 @@ class _PrintScreenState extends State<PrintScreen> {
                   _bottom(),
                 ],
               ),
+            ),
+          ),
+        ))),
+            if (_encoding) Positioned.fill(child: _encodingCover()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// .MP4 만드는 동안 덮는 화면.
+  Widget _encodingCover() {
+    final name = _photo == null ? '' : videoName(_photo!.fileName);
+    return AbsorbPointer(
+      child: ColoredBox(
+        color: Palette.bg,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const LogLine(r'C:\> encode --format=mp4 --size=1080x1920'),
+                LogLine('writing $name', pending: true),
+                const Spacer(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('encoding ...', style: TextStyle(fontFamily: Palette.mono, fontSize: 12, color: Palette.dim)),
+                    Text(
+                      '${(_encProgress * 100).round()}%',
+                      style: const TextStyle(fontFamily: Palette.mono, fontSize: 12, color: Palette.accent),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    progressBar(_encProgress),
+                    style: const TextStyle(fontFamily: Palette.mono, fontSize: 20, color: Palette.accent, height: 1.1),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  "don't turn off your computer_",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: Palette.mono, fontSize: 11, color: Palette.dim),
+                ),
+                const Spacer(),
+              ],
             ),
           ),
         ),
@@ -329,12 +497,24 @@ class _PrintScreenState extends State<PrintScreen> {
         const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(child: TermButton(label: widget.photo == null ? 'RETAKE' : 'BACK', onPressed: _close)),
+            Expanded(child: TermButton(label: _saving ? 'SAVING' : 'SAVE .PNG', onPressed: _saving || _encoding ? null : _save)),
             const SizedBox(width: 8),
-            Expanded(child: TermButton(label: _saving ? 'SAVING' : 'SAVE', onPressed: _saving ? null : _save)),
+            Expanded(child: TermButton(label: 'SAVE .MP4', onPressed: _saving || _encoding ? null : _saveVideo)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: TermButton(label: widget.photo == null ? 'RETAKE' : 'BACK', onPressed: _close)),
             const SizedBox(width: 8),
             Expanded(child: TermButton(label: 'SHARE', filled: true, onPressed: _share)),
           ],
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          '.MP4 = 출력되는 과정을 세로 영상으로 저장',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 11, color: Palette.dim),
         ),
       ],
     );

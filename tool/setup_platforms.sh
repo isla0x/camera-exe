@@ -47,4 +47,8 @@ if manifest.exists():
     manifest.write_text(s)
 PY
 
+# 패키지 받고 앱 아이콘(assets/icon) 을 iOS · Android 에 넣는다.
+flutter pub get
+dart run flutter_launcher_icons
+
 echo "platform folders ready."

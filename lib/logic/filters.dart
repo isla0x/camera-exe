@@ -168,7 +168,7 @@ img.Image crtFilter(img.Image base) {
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
       final i = (y * w + x) * 3;
-      final l = (y * w + math.max(x - 1, 0)) * 3;
+      final l = (y * w + (x > 0 ? x - 1 : 0)) * 3;
       for (var c = 0; c < 3; c++) {
         bled[i + c] = src[i + c] * 0.75 + src[l + c] * 0.25;
       }

@@ -30,7 +30,8 @@ jobs:
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze
+        # 실패하면 내용을 GitHub 주석(annotation)으로도 남긴다.
+        run: flutter analyze > analyze.txt 2>&1 || { cat analyze.txt; grep -E '(error|warning|info) •' analyze.txt | head -40 | sed 's/^/::error::/'; exit 1; }
 
       - name: Test
         run: flutter test --reporter github
@@ -63,4 +64,6 @@ jobs:
         run: flutter pub get
 
       - name: Build iOS (no codesign)
-        run: flutter build ios --release --no-codesign
+        run: |
+          set -o pipefail
+          flutter build ios --release --no-codesign 2>&1 | tee ios.txt || { grep -iE 'error|requires|minimum|deployment' ios.txt | grep -v '^ *$' | head -40 | sed 's/^/::error::/'; exit 1; }

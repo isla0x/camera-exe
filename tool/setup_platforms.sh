@@ -35,9 +35,15 @@ manifest = pathlib.Path("android/app/src/main/AndroidManifest.xml")
 if manifest.exists():
     s = manifest.read_text()
     s = re.sub(r'android:label="[^"]*"', 'android:label="camera.exe"', s, count=1)
-    perm = '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />'
+    # camera 플러그인도 같은 권한을 maxSdkVersion 28 로 넣어서, 우리 값(29)으로 덮어쓴다고 알려 준다.
+    if "xmlns:tools=" not in s:
+        s = s.replace("<manifest ", '<manifest xmlns:tools="http://schemas.android.com/tools" ', 1)
+    perm = ('<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" '
+            'android:maxSdkVersion="29" tools:replace="android:maxSdkVersion" />')
     if "WRITE_EXTERNAL_STORAGE" not in s:
         s = s.replace("<application", perm + "\n    <application", 1)
+    elif 'tools:replace="android:maxSdkVersion"' not in s:
+        s = s.replace('android:maxSdkVersion="29" />', 'android:maxSdkVersion="29" tools:replace="android:maxSdkVersion" />', 1)
     manifest.write_text(s)
 PY
 

@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -49,6 +50,15 @@ ProcessedShot processShot(Uint8List jpeg, CaptureMode mode, {bool mirror = false
     case CaptureMode.ascii:
       return ProcessedShot(mode: mode, asciiLines: asciiArt(base));
   }
+}
+
+/// [processShot] 을 다른 Isolate 에서 돌린다.
+///
+/// 꼭 이렇게 맨 바깥(top-level) 함수에서 불러야 한다. 화면(State)의 async 메서드 안에서
+/// `Isolate.run(() => ...)` 을 만들면 클로저가 화면 전체를 붙잡고 넘어가려다
+/// "object is unsendable" 오류가 난다.
+Future<ProcessedShot> processShotInBackground(Uint8List jpeg, CaptureMode mode, {bool mirror = false}) {
+  return Isolate.run(() => processShot(jpeg, mode, mirror: mirror));
 }
 
 /// 방향을 바로잡고, 가운데를 4:3 가로로 잘라 320 x 240 으로 줄인다.

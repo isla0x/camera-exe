@@ -60,6 +60,13 @@ void main() {
     expect(decoded.exif.isEmpty, isTrue);
   });
 
+  test('다른 Isolate 에서 처리해도 된다 (object is unsendable 오류가 없어야 한다)', () async {
+    for (final mode in CaptureMode.values) {
+      final shot = await processShotInBackground(_portraitJpeg(), mode, mirror: true);
+      expect(shot.mode, mode);
+    }
+  });
+
   test('ramp 앞뒤는 빈칸과 @', () {
     expect(asciiRamp[0], ' ');
     expect(asciiRamp[asciiRamp.length - 1], '@');

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -98,16 +97,16 @@ class _PrintScreenState extends State<PrintScreen> {
   }
 
   Future<void> _process() async {
-    final jpeg = widget.jpeg!;
-    final mode = widget.mode;
-    final mirror = widget.mirror;
     try {
-      final shot = await Isolate.run(() => processShot(jpeg, mode, mirror: mirror));
+      final shot = await processShotInBackground(widget.jpeg!, widget.mode, mirror: widget.mirror);
       if (!mounted) return;
       setState(() => _photo = PrintedPhoto(shot: shot, fileName: _fileName, takenAt: widget.takenAt));
       _startPrinting();
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      debugPrint('camera.exe: 처리 실패 $e');
+      // 긴 오류는 첫 줄만 보여준다.
+      final msg = '$e'.split('\n').first;
+      if (mounted) setState(() => _error = msg.length > 160 ? '${msg.substring(0, 160)}…' : msg);
     }
   }
 

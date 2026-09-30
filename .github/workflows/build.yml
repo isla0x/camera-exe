@@ -37,7 +37,9 @@ jobs:
         run: flutter test --reporter github
 
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee apk.txt || { grep -iE 'error|failed|requires|minSdk|compileSdk|what went wrong' -A2 apk.txt | grep -v '^ *$' | head -40 | sed 's/^/::error::/'; exit 1; }
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

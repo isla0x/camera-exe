@@ -45,6 +45,33 @@ if manifest.exists():
     elif 'tools:replace="android:maxSdkVersion"' not in s:
         s = s.replace('android:maxSdkVersion="29" />', 'android:maxSdkVersion="29" tools:replace="android:maxSdkVersion" />', 1)
     manifest.write_text(s)
+
+# --- Android: 오래된 플러그인(flutter_quick_video_encoder, compileSdk 33)도 최신 SDK 로 빌드한다 ---
+root = pathlib.Path("android/build.gradle.kts")
+if root.exists():
+    s = root.read_text()
+    mark = "// camera.exe: plugin compileSdk"
+    if mark not in s:
+        block = mark + """
+subprojects {
+    afterEvaluate {
+        val android = extensions.findByName("android")
+        if (android != null && plugins.hasPlugin("com.android.library")) {
+            try {
+                android.javaClass.getMethod("setCompileSdk", java.lang.Integer::class.java)
+                    .invoke(android, java.lang.Integer.valueOf(36))
+            } catch (e: NoSuchMethodException) {
+                android.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(android, 36)
+            }
+        }
+    }
+}
+
+"""
+        anchor = "subprojects {\n    project.evaluationDependsOn"
+        i = s.find(anchor)
+        s = s[:i] + block + s[i:] if i >= 0 else s + "\n" + block
+        root.write_text(s)
 PY
 
 # 패키지 받고 앱 아이콘(assets/icon) 을 iOS · Android 에 넣는다.

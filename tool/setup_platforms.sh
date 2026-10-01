@@ -25,6 +25,9 @@ if plist.exists():
     add = "".join(
         f"\t<key>{k}</key>\n\t<string>{v}</string>\n" for k, v in keys.items() if f"<key>{k}</key>" not in s
     )
+    # 암호화 안 씀 (App Store 수출 규정 질문을 건너뛴다)
+    if "<key>ITSAppUsesNonExemptEncryption</key>" not in s:
+        add += "\t<key>ITSAppUsesNonExemptEncryption</key>\n\t<false/>\n"
     if add:
         i = s.rfind("</dict>")
         s = s[:i] + add + s[i:]
@@ -45,6 +48,11 @@ if manifest.exists():
     elif 'tools:replace="android:maxSdkVersion"' not in s:
         s = s.replace('android:maxSdkVersion="29" />', 'android:maxSdkVersion="29" tools:replace="android:maxSdkVersion" />', 1)
     manifest.write_text(s)
+
+# --- Android: Google Play 서명(~/.isla0x 업로드 키) · API 36 이 들어간 앱 빌드 설정 ---
+app_gradle = pathlib.Path("android/app/build.gradle.kts")
+if app_gradle.exists() and "android-upload.properties" not in app_gradle.read_text():
+    app_gradle.write_text(pathlib.Path("tool/templates/app.build.gradle.kts").read_text())
 
 # --- Android: 오래된 플러그인(flutter_quick_video_encoder, compileSdk 33)도 최신 SDK 로 빌드한다 ---
 root = pathlib.Path("android/build.gradle.kts")

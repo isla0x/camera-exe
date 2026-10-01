@@ -44,6 +44,15 @@ flutter run                    # 폰 연결 후 (카메라라 시뮬레이터에
 
 iOS 는 처음 한 번 Xcode 에서 `ios/Runner.xcworkspace` → Runner → Signing & Capabilities → Team 을 고른다.
 
+## 스토어 빌드
+
+```bash
+flutter build ipa          # → open build/ios/archive/Runner.xcarchive → Distribute App
+flutter build appbundle    # → build/app/outputs/bundle/release/app-release.aab (Play Console)
+```
+- Android 는 todo · diary · ink 와 같은 업로드 키(`~/.isla0x/android-upload.properties`)로 서명한다. 없으면 debug 키.
+- 번들 ID: iOS `com.isla0x.cameraExe` · Android `com.isla0x.camera_exe`
+
 ## 구조
 
 ```

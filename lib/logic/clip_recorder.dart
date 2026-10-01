@@ -31,12 +31,12 @@ Uint8List clipFrame(CaptureMode mode, Uint8List rgb, int w, int h, {int index = 
         spec: QualitySpec(baseWidth: w, baseHeight: h, webcamLowWidth: w ~/ 4, webcamScale: 4),
         seed: index,
       ),
-    CaptureMode.butter => butterFilter(base, seed: index),
-    CaptureMode.trip => tripFilter(base, seed: index),
+    CaptureMode.soft => soft35Filter(base, seed: index),
+    CaptureMode.dispo => dispoFilter(base, seed: index),
   };
   final font = w >= 700 ? img.arial24 : img.arial14;
   final pad = w >= 700 ? 20 : 12;
-  if (stamp != null && mode != CaptureMode.butter) {
+  if (stamp != null && mode != CaptureMode.soft) {
     // 오른쪽 아래 주황 날짜 도장 (사진과 같은 모양)
     final tw = _textWidth(font, stamp);
     img.drawString(out, stamp, font: font, x: w - tw - pad, y: h - font.lineHeight - pad, color: img.ColorRgb8(242, 163, 58));

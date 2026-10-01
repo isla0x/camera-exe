@@ -1,8 +1,8 @@
 /// 촬영 모드. 결과 사진이 어떻게 "출력"되는지 정한다.
 enum CaptureMode {
   webcam('WEBCAM', '2003 노트북 웹캠'),
-  butter('BUTTER', '뽀샤시 버터'),
-  trip('TRIP', '여행 필름');
+  soft('SOFT35', '파스텔 필름 똑딱이'),
+  dispo('DISPO', '일회용 필름카메라');
 
   const CaptureMode(this.label, this.subtitle);
 

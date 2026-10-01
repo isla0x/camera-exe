@@ -158,7 +158,7 @@ class _ShotView extends StatelessWidget {
                 child: const ColoredBox(color: Palette.accent),
               ),
             // 날짜 도장: 옛 웹캠 · 여행 필름 카메라처럼
-            if (t >= 1 && shot.mode != CaptureMode.butter)
+            if (t >= 1 && shot.mode != CaptureMode.soft)
               Positioned(
                 right: 8,
                 bottom: 6,

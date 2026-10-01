@@ -1,5 +1,4 @@
 import 'dart:isolate';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -103,10 +102,10 @@ ProcessedShot processShot(
   switch (mode) {
     case CaptureMode.webcam:
       return image(webcamFilter(base, spec: spec));
-    case CaptureMode.butter:
-      return image(butterFilter(base));
-    case CaptureMode.trip:
-      return image(tripFilter(base));
+    case CaptureMode.soft:
+      return image(soft35Filter(base));
+    case CaptureMode.dispo:
+      return image(dispoFilter(base));
   }
 }
 
@@ -266,80 +265,50 @@ Uint8List _blurred(img.Image base, {int radius = 3}) {
   return big.getBytes(order: img.ChannelOrder.rgb);
 }
 
-/// BUTTER: 뽀샤시 버터 필터.
-/// 많이 공유되는 '버터 필터' 라이트룸 레시피를 옮겼다:
-///   대비 -8 · 어두운 영역 +70 · 검정 계열 +80 · 색온도 +4 · 색조 +10 · 디헤이즈 -12 · 그레인 +20
-///   + 텍스처 · 명료도 ↓ (살짝 부드럽게) + 밝은 곳은 노란 쪽으로 + 노출 살짝 +
-///   + 피부는 하얗고 맑게 (피부색 영역만 밝게 · 누런기 ↓ · 살짝 분홍)
-/// [seed] 를 바꾸면 그레인이 바뀐다 (뷰파인더 · 클립에서 프레임마다 움직이게).
-img.Image butterFilter(img.Image base, {int seed = 0}) {
+/// SOFT35: 파스텔 필름 똑딱이.
+/// 필터 앱 인기 순위 상위권 'CPM35' 류의 느낌 (90년대 캐논 필름 똑딱이):
+/// 채도 낮은 파스텔 · 낮은 대비 · 살짝 몽환 · 밝은 곳 분홍빛 · 그늘 살짝 푸른빛 · 입자 적음.
+/// [seed] 를 바꾸면 입자가 바뀐다 (뷰파인더 · 클립에서 프레임마다 움직이게).
+img.Image soft35Filter(img.Image base, {int seed = 0}) {
   final w = base.width, h = base.height;
   final src = base.getBytes(order: img.ChannelOrder.rgb);
-  final blur = _blurred(base, radius: 3);
+  final blur = _blurred(base);
   final out = Uint8List(w * h * 3);
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
       final i = (y * w + x) * 3;
       var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
       final br = blur[i] / 255, bg = blur[i + 1] / 255, bb = blur[i + 2] / 255;
-      final skin = _skin(src[i], src[i + 1], src[i + 2]);
-      // 1) 텍스처 · 명료도 ↓ (살짝 부드럽게)
-      r = r * 0.86 + br * 0.14;
-      g = g * 0.86 + bg * 0.14;
-      b = b * 0.86 + bb * 0.14;
-      // 2) 어두운 영역 +70: 어두운 곳을 크게 끌어올린다
-      var l = _luma(r, g, b);
-      final t = _unit(1 - l / 0.6);
-      final sw = t * math.sqrt(t) * 0.32;
-      r += (1 - r) * sw;
-      g += (1 - g) * sw;
-      b += (1 - b) * sw;
-      // 3) 노출 + (중간 밝기를 환하게)
-      r += (1 - r) * r * 0.38;
-      g += (1 - g) * g * 0.38;
-      b += (1 - b) * b * 0.38;
-      // 4) 검정 계열 +80: 검정점 띄우기
-      r = 0.06 + r * 0.94;
-      g = 0.06 + g * 0.94;
-      b = 0.06 + b * 0.94;
-      // 5) 대비 -8
-      r = 0.5 + (r - 0.5) * 0.92;
-      g = 0.5 + (g - 0.5) * 0.92;
-      b = 0.5 + (b - 0.5) * 0.92;
-      // 6) 디헤이즈 -12: 아주 살짝 뿌옇게
-      r = r * 0.95 + 0.97 * 0.05;
-      g = g * 0.95 + 0.97 * 0.05;
-      b = b * 0.95 + 0.97 * 0.05;
-      // 7) 밝은 곳 은은한 빛 번짐 (약하게)
-      final gl = _unit((_luma(br, bg, bb) - 0.55) / 0.45) * 0.35;
+      // 1) 살짝 부드럽게
+      r = r * 0.88 + br * 0.12;
+      g = g * 0.88 + bg * 0.12;
+      b = b * 0.88 + bb * 0.12;
+      // 2) 밝은 곳 은은한 번짐
+      final gl = _unit((_luma(br, bg, bb) - 0.6) / 0.4) * 0.25;
       r = 1 - (1 - r) * (1 - br * gl);
       g = 1 - (1 - g) * (1 - bg * gl);
       b = 1 - (1 - b) * (1 - bb * gl);
-      // 8) 색온도 +4 · 색조 +10 (조금 따뜻하고 살짝 분홍)
-      r *= 1.03;
-      g *= 0.99;
-      b *= 0.94;
-      // 9) 밝은 곳은 버터(노란) 쪽으로 (피부는 빼고)
+      // 3) 노출 살짝 +
+      r += (1 - r) * r * 0.22;
+      g += (1 - g) * g * 0.22;
+      b += (1 - b) * b * 0.22;
+      // 4) 채도 74% (파스텔)
+      var l = _luma(r, g, b);
+      r = l + (r - l) * 0.74;
+      g = l + (g - l) * 0.74;
+      b = l + (b - l) * 0.74;
+      // 5) 대비 ↓ · 검정 살짝 띄움
+      r = 0.045 + (0.5 + (r - 0.5) * 0.86) * 0.955;
+      g = 0.045 + (0.5 + (g - 0.5) * 0.86) * 0.955;
+      b = 0.045 + (0.5 + (b - 0.5) * 0.86) * 0.955;
+      // 6) 그늘은 살짝 푸르게, 밝은 곳은 분홍빛
       l = _luma(r, g, b);
-      final hi = _unit((l - 0.45) / 0.55) * (1 - skin * 0.85);
-      r += hi * 0.025;
-      g += hi * 0.018;
-      b -= hi * 0.05;
-      // 10) 피부: 밝게 · 채도 살짝 ↓ (누런기 ↓) · 노랑 ↓ 살짝 분홍 = 하얗고 맑은 피부
-      if (skin > 0) {
-        r += (1 - r) * skin * 0.24;
-        g += (1 - g) * skin * 0.24;
-        b += (1 - b) * skin * 0.24;
-        l = _luma(r, g, b);
-        r += (l - r) * skin * 0.14;
-        g += (l - g) * skin * 0.14;
-        b += (l - b) * skin * 0.14;
-        r += skin * 0.012;
-        g -= skin * 0.004;
-        b += skin * 0.018;
-      }
-      // 11) 그레인 +20
-      final n = (_hash(x + seed * 7919, y + seed * 104729) / 255 - 0.5) * 0.035;
+      final sh = (1 - l) * (1 - l), hi = l * l;
+      r += sh * -0.015 + hi * 0.035;
+      g += hi * 0.005;
+      b += sh * 0.035;
+      // 7) 입자 (적게)
+      final n = (_hash(x + seed * 7919, y + seed * 104729) / 255 - 0.5) * 0.025;
       out[i] = _clamp((r + n) * 255);
       out[i + 1] = _clamp((g + n) * 255);
       out[i + 2] = _clamp((b + n) * 255);
@@ -348,66 +317,47 @@ img.Image butterFilter(img.Image base, {int seed = 0}) {
   return _fromRgb(w, h, out);
 }
 
-/// 피부색일수록 1 에 가깝다 (0~1). 원본 색(0~255)을 YCbCr 로 바꿔, 피부가 모이는 곳
-/// (Cb 110 · Cr 150 근처) 에서 얼마나 가까운지 본다. 너무 어두운 곳은 뺀다.
-double _skin(int r, int g, int b) {
-  final y = 0.299 * r + 0.587 * g + 0.114 * b;
-  final cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-  final cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-  final dcb = (cb - 110) / 17, dcr = (cr - 150) / 15;
-  var m = _unit(1 - (dcb * dcb + dcr * dcr)) * _unit((y - 50) / 50);
-  m = m * m * (3 - 2 * m); // 부드럽게
-  return m;
-}
-
-/// TRIP: 여행을 추억하는 필름 느낌.
-/// 바랜 색 · 어두운 곳은 청록, 밝은 곳은 금빛 · 오른쪽 위에서 새어 드는 주황빛 · 필름 입자 · 가장자리 어둠.
-/// [seed] 를 바꾸면 필름 입자가 바뀐다 (클립에서 프레임마다 움직이게).
-img.Image tripFilter(img.Image base, {int seed = 0}) {
+/// DISPO: 일회용 필름카메라.
+/// 필터 앱 인기 순위 상위권 'D FunS' 류의 느낌 (코닥 일회용 카메라 · 컬러플러스 200 필름):
+/// 따뜻하고 진한 색 · 대비 ↑ · 그늘에 초록빛 · 밝은 곳 금빛 · 가장자리 어둠 · 굵은 입자 · 날짜 도장.
+img.Image dispoFilter(img.Image base, {int seed = 0}) {
   final w = base.width, h = base.height;
   final src = base.getBytes(order: img.ChannelOrder.rgb);
+  final blur = _blurred(base);
   final out = Uint8List(w * h * 3);
-  // 입자 크기: 사진이 크면 입자도 조금 크게 (MAX 는 2px)
-  final grainShift = w >= 1000 ? 1 : 0;
-  final leakX = w * 1.04, leakY = h * 0.12;
   for (var y = 0; y < h; y++) {
     final dy = (y - h / 2) / (h / 2);
     for (var x = 0; x < w; x++) {
       final i = (y * w + x) * 3;
       var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
-      // 1) 채도 82%
+      // 1) 플라스틱 렌즈의 살짝 무른 느낌
+      r = r * 0.92 + blur[i] / 255 * 0.08;
+      g = g * 0.92 + blur[i + 1] / 255 * 0.08;
+      b = b * 0.92 + blur[i + 2] / 255 * 0.08;
+      // 2) 채도 ↑
       var l = _luma(r, g, b);
-      r = l + (r - l) * 0.82;
-      g = l + (g - l) * 0.82;
-      b = l + (b - l) * 0.82;
-      // 2) 부드러운 S 곡선 (대비 살짝)
-      r += (r - 0.5) * (1 - (r - 0.5).abs() * 2) * 0.18;
-      g += (g - 0.5) * (1 - (g - 0.5).abs() * 2) * 0.18;
-      b += (b - 0.5) * (1 - (b - 0.5).abs() * 2) * 0.18;
-      // 3) 어두운 곳은 청록, 밝은 곳은 금빛
-      l = _luma(r, g, b);
-      final sh = (1 - l) * (1 - l), hi = l * l;
-      r += sh * -0.06 + hi * 0.10;
-      g += sh * 0.02 + hi * 0.05;
-      b += sh * 0.05 + hi * -0.08;
-      // 4) 바랜 검정 + 따뜻하게
-      r = (0.08 + r * 0.86) * 1.04;
-      g = (0.08 + g * 0.86) * 1.00;
-      b = (0.08 + b * 0.86) * 0.90;
-      // 5) 빛 샘 (light leak)
-      final ldx = (x - leakX) / w, ldy = (y - leakY) / w;
-      final t = 1 - math.sqrt(ldx * ldx + ldy * ldy) / 0.7;
-      if (t > 0) {
-        final leak = t * t * 0.85;
-        r = 1 - (1 - r) * (1 - leak * 1.0);
-        g = 1 - (1 - g) * (1 - leak * 0.5);
-        b = 1 - (1 - b) * (1 - leak * 0.18);
-      }
-      // 6) 가장자리 어둠
+      r = l + (r - l) * 1.12;
+      g = l + (g - l) * 1.12;
+      b = l + (b - l) * 1.12;
+      // 3) S 곡선 (대비 ↑)
+      r += (r - 0.5) * (1 - (r - 0.5).abs() * 2) * 0.30;
+      g += (g - 0.5) * (1 - (g - 0.5).abs() * 2) * 0.30;
+      b += (b - 0.5) * (1 - (b - 0.5).abs() * 2) * 0.30;
+      // 4) 그늘 초록빛 · 중간 따뜻하게 · 밝은 곳 금빛
+      l = _unit(_luma(r, g, b));
+      final sh = (1 - l) * (1 - l), mid = 4 * l * (1 - l), hi = l * l;
+      r += sh * -0.03 + mid * 0.015 + hi * 0.05;
+      g += sh * 0.035 + mid * 0.012 + hi * 0.03;
+      b += sh * -0.01 + mid * -0.03 + hi * -0.06;
+      // 5) 검정 아주 살짝 띄움
+      r = 0.03 + r * 0.97;
+      g = 0.03 + g * 0.97;
+      b = 0.03 + b * 0.97;
+      // 6) 가장자리 어둠 (값싼 렌즈)
       final dx = (x - w / 2) / (w / 2);
-      final v = 1 - 0.22 * (dx * dx + dy * dy);
-      // 7) 필름 입자
-      final n = (_hash((x >> grainShift) + seed * 7919, (y >> grainShift) + seed * 104729) / 255 - 0.5) * 0.09;
+      final v = 1 - 0.30 * (dx * dx + dy * dy);
+      // 7) 굵은 입자
+      final n = (_hash(x + seed * 7919, y + seed * 104729) / 255 - 0.5) * 0.075;
       out[i] = _clamp((r * v + n) * 255);
       out[i + 1] = _clamp((g * v + n) * 255);
       out[i + 2] = _clamp((b * v + n) * 255);
@@ -415,7 +365,6 @@ img.Image tripFilter(img.Image base, {int seed = 0}) {
   }
   return _fromRgb(w, h, out);
 }
-
 
 /// 뷰파인더 한 장: 저장할 때와 같은 필터를 같은 비율로 입혀 RGBA 로 돌려준다 (크기는 그대로).
 /// [seed] 로 노이즈 · 필름 입자가 프레임마다 움직인다.
@@ -435,8 +384,8 @@ Uint8List previewFrame(CaptureMode mode, CaptureQuality quality, Uint8List rgb, 
         ),
         seed: seed,
       ),
-    CaptureMode.butter => butterFilter(base, seed: seed),
-    CaptureMode.trip => tripFilter(base, seed: seed),
+    CaptureMode.soft => soft35Filter(base, seed: seed),
+    CaptureMode.dispo => dispoFilter(base, seed: seed),
   };
   final rgba = out.numChannels == 4 ? out : out.convert(numChannels: 4, alpha: 255);
   return rgba.getBytes(order: img.ChannelOrder.rgba);

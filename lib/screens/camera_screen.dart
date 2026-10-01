@@ -537,7 +537,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
             // 날짜 도장: 저장되는 사진과 같은 자리 · 같은 모양
-            if (_mode != CaptureMode.butter)
+            if (_mode != CaptureMode.soft)
               Positioned(
                 right: 10,
                 bottom: 10,

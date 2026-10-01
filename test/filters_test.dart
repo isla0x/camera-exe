@@ -63,8 +63,8 @@ void main() {
     expect(shot.exportPixelRatio, greaterThan(3));
   });
 
-  test('2X: BUTTER, TRIP 은 기준 크기 그대로 (세로 480x640)', () {
-    for (final mode in [CaptureMode.butter, CaptureMode.trip]) {
+  test('2X: SOFT35, DISPO 는 기준 크기 그대로 (세로 480x640)', () {
+    for (final mode in [CaptureMode.soft, CaptureMode.dispo]) {
       final decoded = img.decodePng(processShot(_portraitJpeg(), mode).png!)!;
       expect([decoded.width, decoded.height], [480, 640]);
     }
@@ -80,35 +80,18 @@ void main() {
     }
   });
 
-  test('BUTTER 는 밝고 부드럽다: 평균이 원본보다 밝고, 검정이 떠 있다', () {
-    final base = prepareBase(_portraitJpeg());
-    final out = butterFilter(base);
-    expect(_mean(out), greaterThan(_mean(base)));
-    final darkest = out.getPixel(240, 0); // 맨 위 = 원본에서 가장 어두운 줄
-    expect(darkest.r, greaterThan(10));
+  test('SOFT35 는 파스텔: 채도가 원본보다 낮고, 검정이 살짝 떠 있다', () {
+    final out = soft35Filter(prepareBase(_colorJpeg(200, 80, 60))).getPixel(240, 320);
+    expect((out.r - out.b).abs(), lessThan(200 - 60));
+    final dark = soft35Filter(prepareBase(_flatJpeg(0))).getPixel(320, 240);
+    expect(dark.r + dark.g + dark.b, greaterThan(15));
   });
 
-  test('BUTTER 는 피부색을 더 밝게 · 덜 노랗게 한다', () {
-    // 전형적인 피부색 (220, 170, 140) 과, 비슷한 밝기의 회색
-    final skin = butterFilter(prepareBase(_colorJpeg(220, 170, 140))).getPixel(320, 240);
-    final plain = butterFilter(prepareBase(_colorJpeg(184, 184, 184))).getPixel(320, 240);
-    expect(skin.r + skin.g + skin.b, greaterThan(plain.r + plain.g + plain.b));
-    // 피부: 노란기(빨강+초록 - 파랑 쪽)가 원본보다 줄었다
-    expect((skin.r + skin.g) / 2 - skin.b, lessThan((220 + 170) / 2 - 140));
-  });
-
-  test('TRIP 은 따뜻하고 바랬다: 가운데 회색이 붉은 쪽, 검정이 떠 있다', () {
-    final out = tripFilter(prepareBase(_flatJpeg(128)));
-    final mid = out.getPixel(200, 300);
+  test('DISPO 는 따뜻하고 가장자리가 어둡다', () {
+    final out = dispoFilter(prepareBase(_flatJpeg(150)));
+    final mid = out.getPixel(320, 240), corner = out.getPixel(4, 4);
     expect(mid.r, greaterThan(mid.b));
-    final dark = tripFilter(prepareBase(_flatJpeg(0))).getPixel(320, 240);
-    expect(dark.r + dark.g + dark.b, greaterThan(30));
-  });
-
-  test('TRIP 은 오른쪽 위에 빛이 샌다', () {
-    final out = tripFilter(prepareBase(_flatJpeg(60)));
-    final leak = out.getPixel(635, 40), left = out.getPixel(5, 40);
-    expect(leak.r, greaterThan(left.r + 30));
+    expect(corner.r + corner.g + corner.b, lessThan(mid.r + mid.g + mid.b - 40));
   });
 
   test('결과 PNG 에는 EXIF(위치정보 등)가 없다', () {

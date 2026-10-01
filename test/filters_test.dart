@@ -129,14 +129,6 @@ Uint8List _flatJpeg(int v) {
   return img.encodeJpg(src, quality: 95);
 }
 
-double _mean(img.Image im) {
-  var sum = 0.0;
-  for (final p in im) {
-    sum += p.r + p.g + p.b;
-  }
-  return sum / (im.width * im.height * 3);
-}
-
 Uint8List _colorJpeg(int r, int g, int b) {
   final src = img.Image(width: 400, height: 300);
   img.fill(src, color: img.ColorRgb8(r, g, b));

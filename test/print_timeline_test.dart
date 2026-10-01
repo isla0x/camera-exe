@@ -38,7 +38,7 @@ void main() {
     expect(keys.length, lessThan(tl.frameCount ~/ 2));
   });
 
-  test('줄 수가 달라도(ASCII 44 · 58줄) 같은 길이로 끝까지 출력된다', () {
+  test('줄 수가 달라도(44 · 58줄) 같은 길이로 끝까지 출력된다', () {
     for (final n in [44, 58]) {
       final a = PrintTimeline(totalRows: n);
       expect(a.frameAt(a.frameCount - 1).rows, n);

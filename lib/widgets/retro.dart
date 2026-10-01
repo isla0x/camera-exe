@@ -44,17 +44,12 @@ ColorFilter previewFilter(CaptureMode mode) {
   switch (mode) {
     case CaptureMode.webcam:
       return ColorFilter.matrix(_saturation(0.65, contrast: 0.88, offset: [20, 13, 2]));
-    case CaptureMode.crt:
-      return ColorFilter.matrix(_saturation(1.35, contrast: 1.12, offset: [0, 0, 0]));
-    case CaptureMode.ascii:
-      // 흑백으로 만든 뒤 초록 형광으로 물들인다.
-      const r = 0.2126, g = 0.7152, b = 0.0722;
-      return const ColorFilter.matrix(<double>[
-        r * 0.45, g * 0.45, b * 0.45, 0, 0, //
-        r * 0.95, g * 0.95, b * 0.95, 0, 8, //
-        r * 0.5, g * 0.5, b * 0.5, 0, 0, //
-        0, 0, 0, 1, 0,
-      ]);
+    case CaptureMode.butter:
+      // 밝고 부드럽게, 크림색
+      return ColorFilter.matrix(_saturation(0.9, contrast: 0.85, offset: [30, 24, 8]));
+    case CaptureMode.trip:
+      // 바래고 따뜻하게
+      return ColorFilter.matrix(_saturation(0.82, contrast: 0.92, offset: [18, 8, -8]));
   }
 }
 

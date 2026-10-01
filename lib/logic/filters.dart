@@ -6,7 +6,7 @@ import 'package:image/image.dart' as img;
 
 import 'capture_mode.dart';
 
-/// 결과 사진 한 장. 이미지 모드는 [png], ASCII 모드는 [asciiLines] 가 채워진다.
+/// 결과 사진 한 장.
 class ProcessedShot {
   const ProcessedShot({
     required this.mode,
@@ -16,7 +16,6 @@ class ProcessedShot {
     this.height = 0,
     this.resWidth = 0,
     this.resHeight = 0,
-    this.asciiLines,
   });
 
   final CaptureMode mode;
@@ -30,15 +29,13 @@ class ProcessedShot {
   /// 기준 해상도 (뷰어 창 아래에 `640 x 480` 처럼 보인다)
   final int resWidth;
   final int resHeight;
-  final List<String>? asciiLines;
 
   /// 출력 애니메이션이 몇 줄로 나눠서 보여줄지.
-  int get printRows => asciiLines?.length ?? 24;
+  int get printRows => 24;
 
   /// 저장 · 공유할 때 화면을 몇 배로 떠야 사진이 뭉개지지 않는지 (사진 칸은 화면에서 약 300pt).
   double get exportPixelRatio {
-    final w = asciiLines != null ? (asciiLines!.first.length * 12) : width;
-    return (w / 300).clamp(3.0, 6.0).toDouble();
+    return (width / 300).clamp(3.0, 6.0).toDouble();
   }
 }
 
@@ -49,9 +46,6 @@ class QualitySpec {
     required this.baseHeight,
     required this.webcamLowWidth,
     required this.webcamScale,
-    required this.crtScale,
-    required this.asciiCols,
-    required this.asciiRows,
   });
 
   /// 기준 크기 (가운데 4:3 을 잘라 이 크기로 줄인다). MAX 는 사진이 작으면 더 작아질 수 있다.
@@ -62,36 +56,22 @@ class QualitySpec {
   final int webcamLowWidth;
   final int webcamScale;
 
-  /// CRT: base 를 몇 배로 키우면서 스캔라인을 넣는지.
-  final int crtScale;
-
-  final int asciiCols;
-  final int asciiRows;
-
   static QualitySpec of(CaptureQuality q) => switch (q) {
         CaptureQuality.x2 => const QualitySpec(
             baseWidth: 640,
             baseHeight: 480,
             webcamLowWidth: 320,
             webcamScale: 4,
-            crtScale: 2,
-            asciiCols: 96,
-            asciiRows: 44,
           ),
         CaptureQuality.max => const QualitySpec(
             baseWidth: 1440,
             baseHeight: 1080,
             webcamLowWidth: 1440,
             webcamScale: 1,
-            crtScale: 1,
-            asciiCols: 128,
-            asciiRows: 58,
           ),
       };
 }
 
-/// 어두운 곳 → 밝은 곳.
-const asciiRamp = ' .:-=+*#%@';
 
 int _mini(int a, int b) => a < b ? a : b;
 int _maxi(int a, int b) => a > b ? a : b;
@@ -114,16 +94,10 @@ ProcessedShot processShot(Uint8List jpeg, CaptureMode mode, {bool mirror = false
   switch (mode) {
     case CaptureMode.webcam:
       return image(webcamFilter(base, spec));
-    case CaptureMode.crt:
-      return image(crtFilter(base, spec));
-    case CaptureMode.ascii:
-      return ProcessedShot(
-        mode: mode,
-        quality: quality,
-        resWidth: base.width,
-        resHeight: base.height,
-        asciiLines: asciiArt(base, cols: spec.asciiCols, rows: spec.asciiRows),
-      );
+    case CaptureMode.butter:
+      return image(butterFilter(base));
+    case CaptureMode.trip:
+      return image(tripFilter(base));
   }
 }
 
@@ -255,132 +229,118 @@ img.Image webcamFilter(img.Image base, [QualitySpec? spec]) {
   return out;
 }
 
-/// CRT: 진한 색, 가로 스캔라인, RGB 번짐, 가장자리 어둠, 둥근 화면 모서리.
-img.Image crtFilter(img.Image base, [QualitySpec? spec]) {
-  final s = spec ?? QualitySpec.of(CaptureQuality.x2);
-  final w = base.width;
-  final h = base.height;
+/// 밝기 (0~1)
+double _luma(double r, double g, double b) => 0.299 * r + 0.587 * g + 0.114 * b;
 
-  // 1) 색을 진하게 + 옆 픽셀로 살짝 번지게
-  final src = Float32List(w * h * 3);
-  for (var y = 0; y < h; y++) {
-    for (var x = 0; x < w; x++) {
-      final p = base.getPixel(x, y);
-      var r = p.r.toDouble();
-      var g = p.g.toDouble();
-      var b = p.b.toDouble();
-      final luma = 0.299 * r + 0.587 * g + 0.114 * b;
-      r = luma + (r - luma) * 1.35;
-      g = luma + (g - luma) * 1.35;
-      b = luma + (b - luma) * 1.35;
-      r = (r - 128) * 1.12 + 128;
-      g = (g - 128) * 1.12 + 128;
-      b = (b - 128) * 1.12 + 128;
-      final i = (y * w + x) * 3;
-      src[i] = r;
-      src[i + 1] = g;
-      src[i + 2] = b;
-    }
-  }
-  // 번지는 거리: 해상도가 높을수록 조금 더 멀리
-  final bleed = _maxi(1, w ~/ 480);
-  final bled = Float32List(w * h * 3);
-  for (var y = 0; y < h; y++) {
-    for (var x = 0; x < w; x++) {
-      final i = (y * w + x) * 3;
-      final l = (y * w + (x >= bleed ? x - bleed : 0)) * 3;
-      for (var c = 0; c < 3; c++) {
-        bled[i + c] = src[i + c] * 0.75 + src[l + c] * 0.25;
-      }
-    }
-  }
+double _unit(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
 
-  // 2) 키우면서 스캔라인 · RGB 격자 · 비네팅 · 둥근 모서리
-  final scale = s.crtScale;
-  final outW = w * scale;
-  final outH = h * scale;
-  final out = img.Image(width: outW, height: outH);
-  // 스캔라인 간격: 키운 만큼(2X) 또는 3줄마다(MAX)
-  final period = scale > 1 ? scale : 3;
-  final radius = 54.0 * outW / 960;
-  final cx = outW / 2;
-  final cy = outH / 2;
-  for (var y = 0; y < outH; y++) {
-    final sy = _mini(y ~/ scale, h - 1);
-    final scan = (y % period == period - 1) ? 0.5 : 1.0;
-    final dy = (y - cy) / cy;
-    for (var x = 0; x < outW; x++) {
-      if (!_insideRoundedRect(x.toDouble(), y.toDouble(), outW.toDouble(), outH.toDouble(), radius)) {
-        out.setPixelRgb(x, y, 0, 0, 0);
-        continue;
-      }
-      final sx = _mini(x ~/ scale, w - 1);
-      final i = (sy * w + sx) * 3;
-      final dx = (x - cx) / cx;
-      final vignette = math.max(0.0, 1.0 - 0.5 * (dx * dx + dy * dy));
-      final sub = x % 3; // 0=R 1=G 2=B 강조
-      final f = scan * vignette;
-      out.setPixelRgb(
-        x,
-        y,
-        _clamp(bled[i] * f * (sub == 0 ? 1.0 : 0.82)),
-        _clamp(bled[i + 1] * f * (sub == 1 ? 1.0 : 0.82)),
-        _clamp(bled[i + 2] * f * (sub == 2 ? 1.0 : 0.82)),
-      );
-    }
-  }
-  return out;
+img.Image _fromRgb(int w, int h, Uint8List rgb) =>
+    img.Image.fromBytes(width: w, height: h, bytes: rgb.buffer, numChannels: 3);
+
+/// 흐리게 뭉갠 사진 (빛 번짐용). 작게 줄여 흐린 뒤 다시 키운다.
+Uint8List _blurred(img.Image base) {
+  final w = base.width, h = base.height;
+  var small = img.copyResize(base, width: _maxi(8, w ~/ 8), height: _maxi(6, h ~/ 8), interpolation: img.Interpolation.average);
+  small = img.gaussianBlur(small, radius: 3);
+  final big = img.copyResize(small, width: w, height: h, interpolation: img.Interpolation.linear);
+  return big.getBytes(order: img.ChannelOrder.rgb);
 }
 
-bool _insideRoundedRect(double x, double y, double w, double h, double r) {
-  final nx = x < r ? r - x : (x > w - 1 - r ? x - (w - 1 - r) : 0.0);
-  final ny = y < r ? r - y : (y > h - 1 - r ? y - (h - 1 - r) : 0.0);
-  return nx * nx + ny * ny <= r * r;
+/// BUTTER: 요즘 유행하는 뽀샤시 버터 느낌.
+/// 살짝 흐리게 → 밝은 곳이 빛처럼 번지고 → 밝고 부드럽게 → 검정을 띄우고 → 크림색으로.
+img.Image butterFilter(img.Image base) {
+  final w = base.width, h = base.height;
+  final src = base.getBytes(order: img.ChannelOrder.rgb);
+  final blur = _blurred(base);
+  final out = Uint8List(w * h * 3);
+  for (var i = 0; i < w * h * 3; i += 3) {
+    var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
+    final br = blur[i] / 255, bg = blur[i + 1] / 255, bb = blur[i + 2] / 255;
+    // 1) 살짝 흐리게 (soft focus)
+    r = r * 0.75 + br * 0.25;
+    g = g * 0.75 + bg * 0.25;
+    b = b * 0.75 + bb * 0.25;
+    // 2) 밝은 곳이 번지는 빛 (흐린 그림의 밝은 부분을 screen 으로 더한다)
+    final hl = _unit((_luma(br, bg, bb) - 0.45) / 0.55) * 0.7;
+    r = 1 - (1 - r) * (1 - br * hl);
+    g = 1 - (1 - g) * (1 - bg * hl);
+    b = 1 - (1 - b) * (1 - bb * hl);
+    // 3) 밝게 (어두운 곳 · 밝은 끝은 덜, 가운데를 많이)
+    r += (1 - r) * r * 0.45;
+    g += (1 - g) * g * 0.45;
+    b += (1 - b) * b * 0.45;
+    // 4) 검정을 띄우고 대비를 낮춘다
+    r = 0.07 + r * 0.9;
+    g = 0.07 + g * 0.9;
+    b = 0.07 + b * 0.9;
+    // 5) 채도 90%
+    final l = _luma(r, g, b);
+    r = l + (r - l) * 0.9;
+    g = l + (g - l) * 0.9;
+    b = l + (b - l) * 0.9;
+    // 6) 버터 색: 밝을수록 크림색 쪽으로
+    final k = l * 0.30;
+    r = (r * (1 - k) + 1.00 * k) * 1.03;
+    g = (g * (1 - k) + 0.95 * k) * 1.00;
+    b = (b * (1 - k) + 0.80 * k) * 0.92;
+    out[i] = _clamp(r * 255);
+    out[i + 1] = _clamp(g * 255);
+    out[i + 2] = _clamp(b * 255);
+  }
+  return _fromRgb(w, h, out);
 }
 
-/// ASCII: 밝기만 남겨 글자로 바꾼다. 어두운 곳은 빈칸, 밝은 곳은 @.
-List<String> asciiArt(img.Image base, {int cols = 96, int rows = 44}) {
-  final cellW = base.width / cols;
-  final cellH = base.height / rows;
-  final values = List<double>.filled(cols * rows, 0);
-
-  for (var r = 0; r < rows; r++) {
-    final y0 = (r * cellH).floor();
-    final y1 = math.max(y0 + 1, ((r + 1) * cellH).floor());
-    for (var c = 0; c < cols; c++) {
-      final x0 = (c * cellW).floor();
-      final x1 = math.max(x0 + 1, ((c + 1) * cellW).floor());
-      var sum = 0.0;
-      var n = 0;
-      for (var y = y0; y < y1 && y < base.height; y++) {
-        for (var x = x0; x < x1 && x < base.width; x++) {
-          final p = base.getPixel(x, y);
-          sum += 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
-          n++;
-        }
+/// TRIP: 여행을 추억하는 필름 느낌.
+/// 바랜 색 · 어두운 곳은 청록, 밝은 곳은 금빛 · 오른쪽 위에서 새어 드는 주황빛 · 필름 입자 · 가장자리 어둠.
+img.Image tripFilter(img.Image base) {
+  final w = base.width, h = base.height;
+  final src = base.getBytes(order: img.ChannelOrder.rgb);
+  final out = Uint8List(w * h * 3);
+  // 입자 크기: 사진이 크면 입자도 조금 크게 (MAX 는 2px)
+  final grainShift = w >= 1000 ? 1 : 0;
+  final leakX = w * 1.04, leakY = h * 0.12;
+  for (var y = 0; y < h; y++) {
+    final dy = (y - h / 2) / (h / 2);
+    for (var x = 0; x < w; x++) {
+      final i = (y * w + x) * 3;
+      var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
+      // 1) 채도 82%
+      var l = _luma(r, g, b);
+      r = l + (r - l) * 0.82;
+      g = l + (g - l) * 0.82;
+      b = l + (b - l) * 0.82;
+      // 2) 부드러운 S 곡선 (대비 살짝)
+      r += (r - 0.5) * (1 - (r - 0.5).abs() * 2) * 0.18;
+      g += (g - 0.5) * (1 - (g - 0.5).abs() * 2) * 0.18;
+      b += (b - 0.5) * (1 - (b - 0.5).abs() * 2) * 0.18;
+      // 3) 어두운 곳은 청록, 밝은 곳은 금빛
+      l = _luma(r, g, b);
+      final sh = (1 - l) * (1 - l), hi = l * l;
+      r += sh * -0.06 + hi * 0.10;
+      g += sh * 0.02 + hi * 0.05;
+      b += sh * 0.05 + hi * -0.08;
+      // 4) 바랜 검정 + 따뜻하게
+      r = (0.08 + r * 0.86) * 1.04;
+      g = (0.08 + g * 0.86) * 1.00;
+      b = (0.08 + b * 0.86) * 0.90;
+      // 5) 빛 샘 (light leak)
+      final ldx = (x - leakX) / w, ldy = (y - leakY) / w;
+      final t = 1 - math.sqrt(ldx * ldx + ldy * ldy) / 0.7;
+      if (t > 0) {
+        final leak = t * t * 0.85;
+        r = 1 - (1 - r) * (1 - leak * 1.0);
+        g = 1 - (1 - g) * (1 - leak * 0.5);
+        b = 1 - (1 - b) * (1 - leak * 0.18);
       }
-      values[r * cols + c] = n == 0 ? 0 : sum / n;
+      // 6) 가장자리 어둠
+      final dx = (x - w / 2) / (w / 2);
+      final v = 1 - 0.22 * (dx * dx + dy * dy);
+      // 7) 필름 입자
+      final n = (_hash(x >> grainShift, y >> grainShift) / 255 - 0.5) * 0.09;
+      out[i] = _clamp((r * v + n) * 255);
+      out[i + 1] = _clamp((g * v + n) * 255);
+      out[i + 2] = _clamp((b * v + n) * 255);
     }
   }
-
-  // 어두운 사진도 글자가 보이게 밝기 범위를 넓힌다.
-  var lo = 255.0;
-  var hi = 0.0;
-  for (final v in values) {
-    lo = math.min(lo, v);
-    hi = math.max(hi, v);
-  }
-  final span = hi - lo < 1 ? 1.0 : hi - lo;
-
-  final lines = <String>[];
-  final sb = StringBuffer();
-  for (var r = 0; r < rows; r++) {
-    sb.clear();
-    for (var c = 0; c < cols; c++) {
-      final t = ((values[r * cols + c] - lo) / span).clamp(0.0, 1.0);
-      sb.write(asciiRamp[(t * (asciiRamp.length - 1)).round()]);
-    }
-    lines.add(sb.toString());
-  }
-  return lines;
+  return _fromRgb(w, h, out);
 }

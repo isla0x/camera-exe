@@ -290,7 +290,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   ),
                 ),
               ),
-            Scanlines(opacity: _mode == CaptureMode.webcam ? 0.18 : 0.38),
+            if (_mode == CaptureMode.webcam) const Scanlines(opacity: 0.18),
             Positioned(
               top: 10,
               left: 10,

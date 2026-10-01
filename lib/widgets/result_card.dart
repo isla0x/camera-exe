@@ -129,9 +129,6 @@ class _ShotView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lines = shot.asciiLines;
-    if (lines != null) return _AsciiView(lines: lines, revealedRows: revealedRows);
-
     final total = shot.printRows;
     final t = (revealedRows / total).clamp(0.0, 1.0);
     return LayoutBuilder(
@@ -160,12 +157,13 @@ class _ShotView extends StatelessWidget {
                 height: 2,
                 child: const ColoredBox(color: Palette.accent),
               ),
-            if (t >= 1 && shot.mode == CaptureMode.webcam)
+            // 날짜 도장: 옛 웹캠 · 여행 필름 카메라처럼
+            if (t >= 1 && shot.mode != CaptureMode.butter)
               Positioned(
                 right: 8,
                 bottom: 6,
                 child: Text(
-                  _webcamStamp(),
+                  _dateStamp(),
                   style: const TextStyle(
                     fontFamily: Palette.mono,
                     fontSize: 11,
@@ -181,44 +179,8 @@ class _ShotView extends StatelessWidget {
     );
   }
 
-  String _webcamStamp() {
+  String _dateStamp() {
     final d = takenAt;
     return "'${two(d.year % 100)} ${two(d.month)} ${two(d.day)}";
-  }
-}
-
-class _AsciiView extends StatelessWidget {
-  const _AsciiView({required this.lines, required this.revealedRows});
-
-  final List<String> lines;
-  final int revealedRows;
-
-  @override
-  Widget build(BuildContext context) {
-    final width = lines.isEmpty ? 0 : lines.first.length;
-    final printing = revealedRows < lines.length;
-    final shown = <String>[];
-    for (var i = 0; i < lines.length; i++) {
-      if (i < revealedRows) {
-        shown.add(lines[i]);
-      } else if (i == revealedRows && printing) {
-        shown.add('█'.padRight(width));
-      } else {
-        shown.add(' ' * width);
-      }
-    }
-    return FittedBox(
-      fit: BoxFit.contain,
-      child: Text(
-        shown.join('\n'),
-        softWrap: false,
-        style: const TextStyle(
-          fontFamily: Palette.mono,
-          fontSize: 14,
-          height: 1.2,
-          color: Palette.accent,
-        ),
-      ),
-    );
   }
 }

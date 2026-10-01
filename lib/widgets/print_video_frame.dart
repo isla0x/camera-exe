@@ -109,5 +109,5 @@ class PrintVideoFrame extends StatelessWidget {
 /// 영상 파일 이름: IMG_0930_213300.BMP → IMG_0930_213300.MP4
 String videoName(String bmpName) => bmpName.replaceAll('.BMP', '.MP4');
 
-/// 모드별로 출력 줄 수가 달라서 영상 길이도 조금씩 다르다 (ASCII 22줄, 나머지 24줄).
+/// 사진 한 장의 영상 시간표.
 PrintTimeline timelineFor(ProcessedShot shot) => PrintTimeline(totalRows: shot.printRows);

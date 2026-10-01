@@ -45,8 +45,8 @@ ColorFilter previewFilter(CaptureMode mode) {
     case CaptureMode.webcam:
       return ColorFilter.matrix(_saturation(0.65, contrast: 0.88, offset: [20, 13, 2]));
     case CaptureMode.butter:
-      // 밝고 뽀얗게 (안개), 크림색
-      return ColorFilter.matrix(_saturation(0.85, contrast: 0.75, offset: [44, 38, 26]));
+      // 밝고 따뜻하게, 대비 살짝 ↓ (첫 프레임 전 잠깐만 보인다)
+      return ColorFilter.matrix(_saturation(0.95, contrast: 0.88, offset: [30, 22, 8]));
     case CaptureMode.trip:
       // 바래고 따뜻하게
       return ColorFilter.matrix(_saturation(0.82, contrast: 0.92, offset: [18, 8, -8]));

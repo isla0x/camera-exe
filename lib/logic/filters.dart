@@ -266,46 +266,69 @@ Uint8List _blurred(img.Image base, {int radius = 3}) {
   return big.getBytes(order: img.ChannelOrder.rgb);
 }
 
-/// BUTTER: 요즘 유행하는 뽀샤시 버터 느낌. 안개가 낀 듯 뽀얗게.
-/// 흐리게 → 밝은 곳이 빛처럼 번지고 → 밝게 → 우윳빛 안개 → 채도 낮춤 → 크림색.
-img.Image butterFilter(img.Image base) {
+/// BUTTER: 뽀샤시 버터 필터.
+/// 많이 공유되는 '버터 필터' 라이트룸 레시피를 옮겼다:
+///   대비 -8 · 어두운 영역 +70 · 검정 계열 +80 · 색온도 +4 · 색조 +10 · 디헤이즈 -12 · 그레인 +20
+///   + 텍스처 · 명료도 ↓ (살짝 부드럽게) + 밝은 곳은 노란 쪽으로 + 노출 살짝 +
+/// [seed] 를 바꾸면 그레인이 바뀐다 (뷰파인더 · 클립에서 프레임마다 움직이게).
+img.Image butterFilter(img.Image base, {int seed = 0}) {
   final w = base.width, h = base.height;
   final src = base.getBytes(order: img.ChannelOrder.rgb);
-  final blur = _blurred(base, radius: 4);
+  final blur = _blurred(base, radius: 3);
   final out = Uint8List(w * h * 3);
-  for (var i = 0; i < w * h * 3; i += 3) {
-    var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
-    final br = blur[i] / 255, bg = blur[i + 1] / 255, bb = blur[i + 2] / 255;
-    // 1) 흐리게 (soft focus)
-    r = r * 0.65 + br * 0.35;
-    g = g * 0.65 + bg * 0.35;
-    b = b * 0.65 + bb * 0.35;
-    // 2) 밝은 곳이 번지는 빛 (흐린 그림의 밝은 부분을 screen 으로 더한다)
-    final hl = _unit((_luma(br, bg, bb) - 0.35) / 0.65) * 0.85;
-    r = 1 - (1 - r) * (1 - br * hl);
-    g = 1 - (1 - g) * (1 - bg * hl);
-    b = 1 - (1 - b) * (1 - bb * hl);
-    // 3) 밝게 (어두운 곳 · 밝은 끝은 덜, 가운데를 많이)
-    r += (1 - r) * r * 0.45;
-    g += (1 - g) * g * 0.45;
-    b += (1 - b) * b * 0.45;
-    // 4) 안개: 전체를 우윳빛 쪽으로 (검정이 뜨고 대비가 낮아진다)
-    r = r * 0.80 + 1.00 * 0.20;
-    g = g * 0.80 + 0.97 * 0.20;
-    b = b * 0.80 + 0.93 * 0.20;
-    // 5) 채도 85%
-    final l = _luma(r, g, b);
-    r = l + (r - l) * 0.85;
-    g = l + (g - l) * 0.85;
-    b = l + (b - l) * 0.85;
-    // 6) 버터 색: 밝을수록 크림색 쪽으로
-    final k = l * 0.22;
-    r = (r * (1 - k) + 1.00 * k) * 1.02;
-    g = (g * (1 - k) + 0.95 * k) * 1.00;
-    b = (b * (1 - k) + 0.80 * k) * 0.94;
-    out[i] = _clamp(r * 255);
-    out[i + 1] = _clamp(g * 255);
-    out[i + 2] = _clamp(b * 255);
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final i = (y * w + x) * 3;
+      var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
+      final br = blur[i] / 255, bg = blur[i + 1] / 255, bb = blur[i + 2] / 255;
+      // 1) 텍스처 · 명료도 ↓ (살짝 부드럽게)
+      r = r * 0.86 + br * 0.14;
+      g = g * 0.86 + bg * 0.14;
+      b = b * 0.86 + bb * 0.14;
+      // 2) 어두운 영역 +70: 어두운 곳을 크게 끌어올린다
+      var l = _luma(r, g, b);
+      final t = _unit(1 - l / 0.6);
+      final sw = t * math.sqrt(t) * 0.32;
+      r += (1 - r) * sw;
+      g += (1 - g) * sw;
+      b += (1 - b) * sw;
+      // 3) 노출 + (중간 밝기를 환하게)
+      r += (1 - r) * r * 0.38;
+      g += (1 - g) * g * 0.38;
+      b += (1 - b) * b * 0.38;
+      // 4) 검정 계열 +80: 검정점 띄우기
+      r = 0.06 + r * 0.94;
+      g = 0.06 + g * 0.94;
+      b = 0.06 + b * 0.94;
+      // 5) 대비 -8
+      r = 0.5 + (r - 0.5) * 0.92;
+      g = 0.5 + (g - 0.5) * 0.92;
+      b = 0.5 + (b - 0.5) * 0.92;
+      // 6) 디헤이즈 -12: 아주 살짝 뿌옇게
+      r = r * 0.95 + 0.97 * 0.05;
+      g = g * 0.95 + 0.97 * 0.05;
+      b = b * 0.95 + 0.97 * 0.05;
+      // 7) 밝은 곳 은은한 빛 번짐 (약하게)
+      final gl = _unit((_luma(br, bg, bb) - 0.55) / 0.45) * 0.35;
+      r = 1 - (1 - r) * (1 - br * gl);
+      g = 1 - (1 - g) * (1 - bg * gl);
+      b = 1 - (1 - b) * (1 - bb * gl);
+      // 8) 색온도 +4 · 색조 +10 (조금 따뜻하고 살짝 분홍)
+      r *= 1.03;
+      g *= 0.99;
+      b *= 0.94;
+      // 9) 밝은 곳은 버터(노란) 쪽으로
+      l = _luma(r, g, b);
+      final hi = _unit((l - 0.45) / 0.55);
+      r += hi * 0.025;
+      g += hi * 0.018;
+      b -= hi * 0.05;
+      // 10) 그레인 +20
+      final n = (_hash(x + seed * 7919, y + seed * 104729) / 255 - 0.5) * 0.035;
+      out[i] = _clamp((r + n) * 255);
+      out[i + 1] = _clamp((g + n) * 255);
+      out[i + 2] = _clamp((b + n) * 255);
+    }
   }
   return _fromRgb(w, h, out);
 }
@@ -385,7 +408,7 @@ Uint8List previewFrame(CaptureMode mode, CaptureQuality quality, Uint8List rgb, 
         ),
         seed: seed,
       ),
-    CaptureMode.butter => butterFilter(base),
+    CaptureMode.butter => butterFilter(base, seed: seed),
     CaptureMode.trip => tripFilter(base, seed: seed),
   };
   final rgba = out.numChannels == 4 ? out : out.convert(numChannels: 4, alpha: 255);

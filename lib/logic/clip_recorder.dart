@@ -31,7 +31,7 @@ Uint8List clipFrame(CaptureMode mode, Uint8List rgb, int w, int h, {int index = 
         spec: QualitySpec(baseWidth: w, baseHeight: h, webcamLowWidth: w ~/ 4, webcamScale: 4),
         seed: index,
       ),
-    CaptureMode.butter => butterFilter(base),
+    CaptureMode.butter => butterFilter(base, seed: index),
     CaptureMode.trip => tripFilter(base, seed: index),
   };
   final font = w >= 700 ? img.arial24 : img.arial14;

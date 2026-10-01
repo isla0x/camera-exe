@@ -1,7 +1,7 @@
 name: camera_exe
 description: "camera.exe — 사진이 레트로 PC 화면처럼 한 줄씩 출력되는 카메라 앱"
 publish_to: "none"
-version: 0.7.0+11
+version: 0.7.1+12
 
 environment:
   sdk: ^3.5.0

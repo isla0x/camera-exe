@@ -88,6 +88,15 @@ void main() {
     expect(darkest.r, greaterThan(10));
   });
 
+  test('BUTTER 는 피부색을 더 밝게 · 덜 노랗게 한다', () {
+    // 전형적인 피부색 (220, 170, 140) 과, 비슷한 밝기의 회색
+    final skin = butterFilter(prepareBase(_colorJpeg(220, 170, 140))).getPixel(320, 240);
+    final plain = butterFilter(prepareBase(_colorJpeg(184, 184, 184))).getPixel(320, 240);
+    expect(skin.r + skin.g + skin.b, greaterThan(plain.r + plain.g + plain.b));
+    // 피부: 노란기(빨강+초록 - 파랑 쪽)가 원본보다 줄었다
+    expect((skin.r + skin.g) / 2 - skin.b, lessThan((220 + 170) / 2 - 140));
+  });
+
   test('TRIP 은 따뜻하고 바랬다: 가운데 회색이 붉은 쪽, 검정이 떠 있다', () {
     final out = tripFilter(prepareBase(_flatJpeg(128)));
     final mid = out.getPixel(200, 300);
@@ -143,4 +152,10 @@ double _mean(img.Image im) {
     sum += p.r + p.g + p.b;
   }
   return sum / (im.width * im.height * 3);
+}
+
+Uint8List _colorJpeg(int r, int g, int b) {
+  final src = img.Image(width: 400, height: 300);
+  img.fill(src, color: img.ColorRgb8(r, g, b));
+  return img.encodeJpg(src, quality: 98);
 }

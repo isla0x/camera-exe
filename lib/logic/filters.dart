@@ -270,6 +270,7 @@ Uint8List _blurred(img.Image base, {int radius = 3}) {
 /// 많이 공유되는 '버터 필터' 라이트룸 레시피를 옮겼다:
 ///   대비 -8 · 어두운 영역 +70 · 검정 계열 +80 · 색온도 +4 · 색조 +10 · 디헤이즈 -12 · 그레인 +20
 ///   + 텍스처 · 명료도 ↓ (살짝 부드럽게) + 밝은 곳은 노란 쪽으로 + 노출 살짝 +
+///   + 피부는 하얗고 맑게 (피부색 영역만 밝게 · 누런기 ↓ · 살짝 분홍)
 /// [seed] 를 바꾸면 그레인이 바뀐다 (뷰파인더 · 클립에서 프레임마다 움직이게).
 img.Image butterFilter(img.Image base, {int seed = 0}) {
   final w = base.width, h = base.height;
@@ -281,6 +282,7 @@ img.Image butterFilter(img.Image base, {int seed = 0}) {
       final i = (y * w + x) * 3;
       var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
       final br = blur[i] / 255, bg = blur[i + 1] / 255, bb = blur[i + 2] / 255;
+      final skin = _skin(src[i], src[i + 1], src[i + 2]);
       // 1) 텍스처 · 명료도 ↓ (살짝 부드럽게)
       r = r * 0.86 + br * 0.14;
       g = g * 0.86 + bg * 0.14;
@@ -317,13 +319,26 @@ img.Image butterFilter(img.Image base, {int seed = 0}) {
       r *= 1.03;
       g *= 0.99;
       b *= 0.94;
-      // 9) 밝은 곳은 버터(노란) 쪽으로
+      // 9) 밝은 곳은 버터(노란) 쪽으로 (피부는 빼고)
       l = _luma(r, g, b);
-      final hi = _unit((l - 0.45) / 0.55);
+      final hi = _unit((l - 0.45) / 0.55) * (1 - skin * 0.85);
       r += hi * 0.025;
       g += hi * 0.018;
       b -= hi * 0.05;
-      // 10) 그레인 +20
+      // 10) 피부: 밝게 · 채도 살짝 ↓ (누런기 ↓) · 노랑 ↓ 살짝 분홍 = 하얗고 맑은 피부
+      if (skin > 0) {
+        r += (1 - r) * skin * 0.24;
+        g += (1 - g) * skin * 0.24;
+        b += (1 - b) * skin * 0.24;
+        l = _luma(r, g, b);
+        r += (l - r) * skin * 0.14;
+        g += (l - g) * skin * 0.14;
+        b += (l - b) * skin * 0.14;
+        r += skin * 0.012;
+        g -= skin * 0.004;
+        b += skin * 0.018;
+      }
+      // 11) 그레인 +20
       final n = (_hash(x + seed * 7919, y + seed * 104729) / 255 - 0.5) * 0.035;
       out[i] = _clamp((r + n) * 255);
       out[i + 1] = _clamp((g + n) * 255);
@@ -331,6 +346,18 @@ img.Image butterFilter(img.Image base, {int seed = 0}) {
     }
   }
   return _fromRgb(w, h, out);
+}
+
+/// 피부색일수록 1 에 가깝다 (0~1). 원본 색(0~255)을 YCbCr 로 바꿔, 피부가 모이는 곳
+/// (Cb 110 · Cr 150 근처) 에서 얼마나 가까운지 본다. 너무 어두운 곳은 뺀다.
+double _skin(int r, int g, int b) {
+  final y = 0.299 * r + 0.587 * g + 0.114 * b;
+  final cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+  final cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+  final dcb = (cb - 110) / 17, dcr = (cr - 150) / 15;
+  var m = _unit(1 - (dcb * dcb + dcr * dcr)) * _unit((y - 50) / 50);
+  m = m * m * (3 - 2 * m); // 부드럽게
+  return m;
 }
 
 /// TRIP: 여행을 추억하는 필름 느낌.

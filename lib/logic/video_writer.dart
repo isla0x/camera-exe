@@ -9,8 +9,14 @@ class VideoWriter {
   final int height;
 
   /// 1080 x 1920 으로 열어 보고, 폰이 못 하면 720 x 1280 으로.
-  static Future<VideoWriter> open(String path, {int fps = 30}) async {
-    const sizes = [(1080, 1920, 14000000), (720, 1280, 8000000)];
+  static Future<VideoWriter> open(String path, {int fps = 30}) =>
+      _openFirst(path, fps, const [(1080, 1920, 14000000), (720, 1280, 8000000)]);
+
+  /// 정해진 크기로 연다 (클립).
+  static Future<VideoWriter> openSized(String path, int width, int height, {required int fps, required int bitrate}) =>
+      _openFirst(path, fps, [(width, height, bitrate)]);
+
+  static Future<VideoWriter> _openFirst(String path, int fps, List<(int, int, int)> sizes) async {
     Object? last;
     for (final (w, h, bitrate) in sizes) {
       try {

@@ -96,7 +96,7 @@ ProcessedShot processShot(Uint8List jpeg, CaptureMode mode, {bool mirror = false
       );
   switch (mode) {
     case CaptureMode.webcam:
-      return image(webcamFilter(base, spec));
+      return image(webcamFilter(base, spec: spec));
     case CaptureMode.butter:
       return image(butterFilter(base));
     case CaptureMode.trip:
@@ -185,7 +185,8 @@ int _hash(int x, int y) {
 }
 
 /// WEBCAM: 바랜 색, 따뜻한 색조, 자글자글한 노이즈. 2X 는 큼직한 픽셀, MAX 는 픽셀화 없이.
-img.Image webcamFilter(img.Image base, [QualitySpec? spec]) {
+/// [seed] 를 바꾸면 노이즈 모양이 바뀐다 (클립에서 프레임마다 자글자글 움직이게).
+img.Image webcamFilter(img.Image base, {QualitySpec? spec, int seed = 0}) {
   final s = spec ?? QualitySpec.of(CaptureQuality.x2);
   // 기준 크기에 대한 비율로 줄인다 (세로 사진이면 가로가 더 좁다).
   final lowW = _mini(base.width, _maxi(1, (base.width * s.webcamLowWidth / s.baseWidth).round()));
@@ -216,7 +217,7 @@ img.Image webcamFilter(img.Image base, [QualitySpec? spec]) {
       g += 3;
       b -= 8;
       // 노이즈
-      final n = (_hash(x, y) / 255.0 - 0.5) * noise;
+      final n = (_hash(x + seed * 7919, y + seed * 104729) / 255.0 - 0.5) * noise;
       final i = (y * lowW + x) * 3;
       colors[i] = _clamp(r + n);
       colors[i + 1] = _clamp(g + n);
@@ -301,7 +302,8 @@ img.Image butterFilter(img.Image base) {
 
 /// TRIP: 여행을 추억하는 필름 느낌.
 /// 바랜 색 · 어두운 곳은 청록, 밝은 곳은 금빛 · 오른쪽 위에서 새어 드는 주황빛 · 필름 입자 · 가장자리 어둠.
-img.Image tripFilter(img.Image base) {
+/// [seed] 를 바꾸면 필름 입자가 바뀐다 (클립에서 프레임마다 움직이게).
+img.Image tripFilter(img.Image base, {int seed = 0}) {
   final w = base.width, h = base.height;
   final src = base.getBytes(order: img.ChannelOrder.rgb);
   final out = Uint8List(w * h * 3);
@@ -345,7 +347,7 @@ img.Image tripFilter(img.Image base) {
       final dx = (x - w / 2) / (w / 2);
       final v = 1 - 0.22 * (dx * dx + dy * dy);
       // 7) 필름 입자
-      final n = (_hash(x >> grainShift, y >> grainShift) / 255 - 0.5) * 0.09;
+      final n = (_hash((x >> grainShift) + seed * 7919, (y >> grainShift) + seed * 104729) / 255 - 0.5) * 0.09;
       out[i] = _clamp((r * v + n) * 255);
       out[i + 1] = _clamp((g * v + n) * 255);
       out[i + 2] = _clamp((b * v + n) * 255);

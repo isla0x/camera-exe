@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../logic/capture_mode.dart';
+import '../logic/clip_recorder.dart';
+import '../logic/frame_convert.dart';
 import '../theme/palette.dart';
 import '../widgets/retro.dart';
+import 'clip_screen.dart';
 import 'print_screen.dart';
 
 /// 촬영 화면: 부팅 로그, 4:3 뷰파인더, 모드 선택, 셔터.
@@ -35,6 +40,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   bool _cursorOn = true;
   Timer? _blink;
+
+  // ── 클립 (셔터를 꾹 누르는 동안 녹화) ──
+  ClipRecorder? _rec;
+  bool _recording = false;
+  bool _stopAsked = false;
+  DateTime? _recStart;
+  DateTime? _lastFrameAt;
+  Timer? _recTimer;
+  int _recRotation = 0;
+  bool _recMirror = false;
+  String _recName = '';
 
   @override
   void initState() {
@@ -67,6 +83,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _blink?.cancel();
+    _recTimer?.cancel();
+    _rec?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -76,6 +94,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final c = _controller;
     if (state == AppLifecycleState.inactive) {
+      if (_recording) _cancelClip();
       if (c == null || !c.value.isInitialized) return;
       _controller = null;
       c.dispose();
@@ -115,7 +134,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       await old?.dispose();
 
       // veryHigh = 1920x1080. 가운데 4:3 을 자르면 1440x1080 (MAX 화질).
-      final c = CameraController(cam, ResolutionPreset.veryHigh, enableAudio: false);
+      // 클립용 미리보기 프레임: iOS 는 BGRA, Android 는 YUV420
+      final c = CameraController(
+        cam,
+        ResolutionPreset.veryHigh,
+        enableAudio: false,
+        imageFormatGroup: Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.yuv420,
+      );
       try {
         await c.initialize();
       } on CameraException catch (e) {
@@ -178,6 +203,147 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     final last = _last;
     if (last == null) return;
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => PrintScreen.done(photo: last)));
+  }
+
+  // ─────────────── 클립 ───────────────
+
+  static int _deviceDegrees(DeviceOrientation o) => switch (o) {
+        DeviceOrientation.portraitUp => 0,
+        DeviceOrientation.landscapeLeft => 90,
+        DeviceOrientation.portraitDown => 180,
+        DeviceOrientation.landscapeRight => 270,
+      };
+
+  Future<void> _startClip() async {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized || _busy || _recording || c.value.isStreamingImages) return;
+    HapticFeedback.heavyImpact();
+    _stopAsked = false;
+    setState(() {
+      _busy = true;
+      _recording = true;
+      _recStart = DateTime.now();
+    });
+    try {
+      final o = c.value.deviceOrientation;
+      final portrait = o == DeviceOrientation.portraitUp || o == DeviceOrientation.portraitDown;
+      final front = c.description.lensDirection == CameraLensDirection.front;
+      _recRotation = frameRotation(sensorOrientation: c.description.sensorOrientation, deviceDegrees: _deviceDegrees(o), front: front);
+      _recMirror = front;
+      final (w, h) = clipSize(_quality, portrait: portrait);
+      final now = DateTime.now();
+      _recName = 'CLIP_${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.MP4';
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/${_recName.replaceAll('.MP4', '.mp4')}';
+      final f = File(path);
+      if (await f.exists()) await f.delete();
+      _rec = await ClipRecorder.start(
+        path: path,
+        mode: _mode,
+        width: w,
+        height: h,
+        bitrate: clipBitrate(_quality),
+        stamp: "'${two(now.year % 100)} ${two(now.month)} ${two(now.day)}",
+      );
+      _lastFrameAt = null;
+      await c.startImageStream(_onFrame);
+      _recTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        if (!mounted) return;
+        setState(() {});
+        final start = _recStart;
+        if (start != null && DateTime.now().difference(start).inMilliseconds >= clipMaxSeconds * 1000) _stopClip();
+      });
+      // 시작하는 사이 손을 뗐으면 바로 멈춘다
+      if (_stopAsked) await _stopClip();
+    } catch (e) {
+      debugPrint('camera.exe: 클립 시작 실패 $e');
+      await _cancelClip(message: 'record failed: $e');
+    }
+  }
+
+  void _onFrame(CameraImage im) {
+    final rec = _rec;
+    if (rec == null || !_recording) return;
+    final now = DateTime.now();
+    final last = _lastFrameAt;
+    // 12fps: 약 83ms 마다 한 장
+    if (last != null && now.difference(last).inMicroseconds < 1000000 ~/ clipFps - 4000) return;
+    _lastFrameAt = last == null ? now : last.add(Duration(microseconds: 1000000 ~/ clipFps));
+    if (now.difference(_lastFrameAt!).inMilliseconds > 200) _lastFrameAt = now; // 많이 밀렸으면 다시 맞춘다
+    final raw = RawFrame(
+      width: im.width,
+      height: im.height,
+      planes: [for (final p in im.planes) p.bytes],
+      rowStrides: [for (final p in im.planes) p.bytesPerRow],
+      pixelStrides: [for (final p in im.planes) p.bytesPerPixel ?? 1],
+      bgra: im.format.group == ImageFormatGroup.bgra8888,
+    );
+    rec.add(frameToRgb(raw, rotation: _recRotation, mirror: _recMirror, outW: rec.width, outH: rec.height));
+  }
+
+  Future<void> _stopClip() async {
+    if (!_recording) return;
+    final rec = _rec;
+    if (rec == null) {
+      _stopAsked = true; // 아직 시작하는 중
+      return;
+    }
+    _recording = false;
+    _rec = null;
+    _recTimer?.cancel();
+    final c = _controller;
+    try {
+      if (c != null && c.value.isStreamingImages) await c.stopImageStream();
+    } catch (_) {}
+    final secs = rec.frames / clipFps;
+    try {
+      final frames = await rec.finish();
+      if (frames < clipFps ~/ 2) {
+        // 0.5초도 안 되면 실수로 누른 것: 버린다
+        File(rec.path).delete().catchError((_) => File(rec.path));
+        _toast('too short: 셔터를 꾹 누르고 있는 동안 녹화돼요');
+      } else if (mounted) {
+        HapticFeedback.mediumImpact();
+        setState(() => _busy = false);
+        await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => ClipScreen(path: rec.path, fileName: _recName, mode: _mode, seconds: frames / clipFps),
+        ));
+      }
+    } catch (e) {
+      debugPrint('camera.exe: 클립 저장 실패 $e (${secs.toStringAsFixed(1)}s)');
+      _toast('record failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _cancelClip({String? message}) async {
+    final rec = _rec;
+    _rec = null;
+    _recording = false;
+    _recTimer?.cancel();
+    try {
+      final c = _controller;
+      if (c != null && c.value.isStreamingImages) await c.stopImageStream();
+    } catch (_) {}
+    if (rec != null) {
+      await rec.cancel();
+      File(rec.path).delete().catchError((_) => File(rec.path));
+    }
+    if (mounted) setState(() => _busy = false);
+    if (message != null) _toast(message);
+  }
+
+  void _toast(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m.split('\n').first)));
+  }
+
+  String get _recClock {
+    final start = _recStart;
+    final ms = start == null ? 0 : DateTime.now().difference(start).inMilliseconds;
+    final s = (ms / 1000).clamp(0, clipMaxSeconds).floor();
+    return '00:${two(s)} / 00:${two(clipMaxSeconds)}';
   }
 
   void _pick(CaptureMode m) {
@@ -247,13 +413,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                     onPressed: _last == null ? null : _openLast,
                     child: const Text(r'C:\PICS', style: TextStyle(fontFamily: Palette.mono, fontSize: 10, color: Palette.dim)),
                   ),
-                  _Shutter(onPressed: ready && !_busy ? _shoot : null, busy: _busy),
+                  _Shutter(
+                    onPressed: ready && !_busy ? _shoot : null,
+                    onHoldStart: ready && !_busy ? _startClip : null,
+                    onHoldEnd: _stopClip,
+                    busy: _busy && !_recording,
+                    recording: _recording,
+                  ),
                   _SquareButton(
                     label: 'Flip camera',
                     onPressed: _cameras.length > 1 && !_busy ? _flip : null,
                     child: const Icon(Icons.cameraswitch_outlined, size: 22, color: Palette.fg),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '탭 = 사진  ·  꾹 누르고 있기 = 클립 (최대 10초)',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: Palette.dim),
               ),
             ],
           ),
@@ -297,9 +475,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               left: 10,
               child: Row(
                 children: [
-                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: Palette.rec, shape: BoxShape.circle)),
+                  Opacity(
+                    opacity: _recording && !_cursorOn ? 0.15 : 1,
+                    child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: Palette.rec, shape: BoxShape.circle)),
+                  ),
                   const SizedBox(width: 6),
-                  Text('REC ${_quality.res}', style: _overlay),
+                  Text(_recording ? 'REC $_recClock' : 'REC ${_quality.res}', style: _overlay),
                 ],
               ),
             ),
@@ -382,32 +563,49 @@ class _SquareButton extends StatelessWidget {
 }
 
 class _Shutter extends StatelessWidget {
-  const _Shutter({required this.onPressed, required this.busy});
+  const _Shutter({
+    required this.onPressed,
+    required this.onHoldStart,
+    required this.onHoldEnd,
+    required this.busy,
+    required this.recording,
+  });
 
   final VoidCallback? onPressed;
+  final VoidCallback? onHoldStart;
+  final VoidCallback onHoldEnd;
   final bool busy;
+  final bool recording;
 
   @override
   Widget build(BuildContext context) {
-    final on = onPressed != null;
+    final on = onPressed != null || recording;
+    final ring = recording ? Palette.rec : (on || busy ? Palette.accent : Palette.border);
     return Semantics(
       button: true,
-      label: 'Take photo',
+      label: recording ? 'Recording clip' : 'Take photo, hold to record a clip',
       child: GestureDetector(
         onTap: onPressed,
+        onLongPressStart: onHoldStart == null ? null : (_) => onHoldStart!(),
+        onLongPressEnd: (_) => onHoldEnd(),
+        onLongPressCancel: onHoldEnd,
         child: Container(
           width: 78,
           height: 78,
-          padding: const EdgeInsets.all(7),
+          padding: EdgeInsets.all(recording ? 18 : 7),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: on || busy ? Palette.accent : Palette.border, width: 3),
+            border: Border.all(color: ring, width: 3),
           ),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: busy ? Palette.accent.withValues(alpha: 0.4) : (on ? Palette.accent : Palette.border),
+              // 녹화 중에는 빨간 네모 (정지 버튼처럼)
+              shape: recording ? BoxShape.rectangle : BoxShape.circle,
+              borderRadius: recording ? BorderRadius.circular(4) : null,
+              color: recording
+                  ? Palette.rec
+                  : (busy ? Palette.accent.withValues(alpha: 0.4) : (on ? Palette.accent : Palette.border)),
             ),
           ),
         ),

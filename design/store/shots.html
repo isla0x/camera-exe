@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: JBM; src: url(fonts/JetBrainsMono-Regular.ttf); font-weight: 400; }
+@font-face { font-family: JBM; src: url(fonts/JetBrainsMono-Bold.ttf); font-weight: 700; }
+@font-face { font-family: NGC; src: url(fonts/NanumGothicCoding-Regular.ttf); font-weight: 400; }
+@font-face { font-family: NGC; src: url(fonts/NanumGothicCoding-Bold.ttf); font-weight: 700; }
+@font-face { font-family: NSK; src: url(fonts/NotoSansKR.ttf); font-weight: 100 900; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #0C0D0B; overflow: hidden; }
+:root { --bg:#0C0D0B; --panel:#1A1D18; --deep:#080907; --line:#2B2F29; --border:#3A3F37; --fg:#D9E0D6; --dim:#8A9587;
+        --acc:#8BE38B; --rec:#E5534B; --face:#C9CCC4; --title:#1F3D7A; --wtext:#111; --stamp:#F2A33A; }
+.canvas { position: relative; overflow: hidden; background: radial-gradient(120% 70% at 50% 0%, #17221a 0%, #0C0D0B 62%); }
+.cap { position: absolute; left: 0; right: 0; text-align: center; color: #F2F2F2; }
+.cap .p { font-family: JBM, NGC, monospace; color: var(--dim); }
+.cap .p b { color: var(--acc); font-weight: 400; }
+.cap .t { font-family: NSK, sans-serif; font-weight: 800; letter-spacing: -0.5px; }
+.cap .s { font-family: NSK, sans-serif; color: #A9B2A6; font-weight: 500; }
+.frame { position: absolute; background: #1b1b1b; border: 1px solid #3a3a3a; box-shadow: 0 30px 80px rgba(0,0,0,.65), inset 0 0 0 2px #0a0a0a; }
+.screen { position: absolute; overflow: hidden; background: var(--bg); }
+.app { position: absolute; left: 0; top: 0; width: 390px; height: 844px; transform-origin: top left; font-family: JBM, NGC, monospace;
+       color: var(--fg); background: var(--bg); padding: 59px 20px 34px; display: flex; flex-direction: column; }
+.log { font-size: 12px; line-height: 1.5; color: var(--dim); white-space: nowrap; }
+.ok { color: var(--acc); }
+.btn { height: 44px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 4px;
+       font-size: 13px; color: var(--fg); letter-spacing: .5px; }
+.btn.on { background: var(--acc); border-color: var(--acc); color: var(--bg); font-weight: 700; }
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; }
+.vf { position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.vf img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: auto; }
+.ov { position: absolute; font-size: 11px; color: var(--fg); text-shadow: 0 0 3px #000; }
+.stamp { position: absolute; font-weight: 700; color: var(--stamp); text-shadow: 1px 1px 0 rgba(0,0,0,.55); }
+.win { background: var(--face); box-shadow: 6px 6px 0 #000; padding: 2px; }
+.win .tb { height: 28px; background: var(--title); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; padding: 0 4px 0 8px; gap: 3px; }
+.win .tb span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.win .tb i { width: 18px; height: 16px; background: var(--face); color: var(--wtext); font-style: normal; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.win .ph { margin: 4px; background: var(--deep); padding: 10px 6px 8px; }
+.win .pic { position: relative; overflow: hidden; }
+.win .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.win .meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); margin-top: 8px; }
+.win .st { display: flex; justify-content: space-between; font-size: 11px; color: var(--wtext); padding: 1px 8px 4px; }
+.bar20 { font-size: 20px; color: var(--acc); line-height: 1.1; white-space: nowrap; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const q = new URLSearchParams(location.search);
+const device = q.get('device') || 'iphone';   // iphone · ipad · play
+const shot = +(q.get('shot') || 1);
+const IP = device !== 'ipad';
+const C = {
+  iphone: { w: 440, h: 956, frameTop: 196, screenW: 340, bezel: 9, rFrame: 56, rScreen: 48, capTop: 58, pSize: 13, tSize: 32, sSize: 15 },
+  iphone65: { w: 428, h: 926, frameTop: 190, screenW: 330, bezel: 9, rFrame: 54, rScreen: 46, capTop: 54, pSize: 13, tSize: 31, sSize: 15 },
+  play: { w: 360, h: 640, frameTop: 150, screenW: 230, bezel: 7, rFrame: 34, rScreen: 28, capTop: 36, pSize: 11, tSize: 24, sSize: 12 },
+  ipad: { w: 1032, h: 1376, frameTop: 300, screenW: 466, bezel: 14, rFrame: 64, rScreen: 54, capTop: 86, pSize: 20, tSize: 52, sSize: 22 },
+}[device === 'iphone' && q.get('size') === '65' ? 'iphone65' : device];
+const appW = 390, appH = 844;
+const screenH = Math.round(C.screenW * appH / appW);
+
+const now = { md: '10/01/2026', stamp: "'26 10 01", file: 'IMG_1001_135700' };
+const LOGS = (lines) => lines.map(([t, ok]) => `<div class="log">${t}${ok ? ' <span class="ok">OK</span>' : ''}</div>`).join('');
+
+function phone(inner) {
+  const sc = C.screenW / appW;
+  return `<div class="frame" style="left:${(C.w - C.screenW) / 2 - C.bezel}px;top:${C.frameTop}px;width:${C.screenW + C.bezel * 2}px;height:${screenH + C.bezel * 2}px;border-radius:${C.rFrame}px">
+    <div class="screen" style="left:${C.bezel}px;top:${C.bezel}px;width:${C.screenW}px;height:${screenH}px;border-radius:${C.rScreen}px">
+      <div class="app" style="transform:scale(${sc})">${inner}</div>
+      ${IP ? `<div style="position:absolute;left:50%;top:${11 * sc}px;width:${120 * sc}px;height:${34 * sc}px;margin-left:${-60 * sc}px;border-radius:${17 * sc}px;background:#000"></div>` : ''}
+    </div></div>`;
+}
+function caption(prompt, title, sub) {
+  return `<div class="cap" style="top:${C.capTop}px">
+    <div class="p" style="font-size:${C.pSize}px"><b>&gt;_</b> C:\\&gt; ${prompt}</div>
+    <div class="t" style="font-size:${C.tSize}px;margin-top:${C.pSize * 0.7}px">${title}</div>
+    <div class="s" style="font-size:${C.sSize}px;margin-top:${C.sSize * 0.5}px">${sub}</div></div>`;
+}
+
+// ── 앱 화면들 ──
+function cameraScreen({ img, mode, rec, stamp = true }) {
+  const modes = ['WEBCAM', 'SOFT35', 'DISPO'];
+  return LOGS([['C:\\&gt; camera.exe'], ['init sensor ........', 1], [`load mode ${mode.padEnd(6)} ...`, 1]]) + `
+  <div style="height:16px"></div>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0">
+    <div class="vf" style="width:350px;height:467px">
+      <img src="img/${img}">
+      <div class="ov" style="top:10px;left:10px;display:flex;align-items:center;gap:6px"><i style="width:8px;height:8px;border-radius:50%;background:var(--rec);display:block"></i>${rec ? 'REC 00:04 / 00:10' : 'REC 640x480'}</div>
+      <div class="ov" style="top:10px;right:10px">${now.md}</div>
+      ${stamp ? `<div class="stamp" style="right:10px;bottom:10px;font-size:12px">${now.stamp}</div>` : ''}
+      <div style="position:absolute;left:10px;bottom:8px;font-size:18px;font-weight:700;color:var(--acc)">${mode}_</div>
+    </div>
+  </div>
+  <div style="height:16px"></div>
+  <div class="row">${modes.map(m => `<div class="btn ${m === mode ? 'on' : ''}">${m}</div>`).join('')}</div>
+  <div style="height:8px"></div>
+  <div class="row" style="align-items:center"><div style="flex:0 0 44px;font-size:11px;color:var(--dim)">RES</div>
+    <div class="btn on" style="height:34px">2X · 640x480</div><div class="btn" style="height:34px">MAX · HD</div></div>
+  <div style="height:16px"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div style="width:56px;height:56px;border:1px solid var(--border);border-radius:6px;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)">C:\\PICS</div>
+    <div style="width:78px;height:78px;border-radius:50%;border:3px solid ${rec ? 'var(--rec)' : 'var(--acc)'};padding:${rec ? 18 : 7}px">
+      <div style="width:100%;height:100%;border-radius:${rec ? '4px' : '50%'};background:${rec ? 'var(--rec)' : 'var(--acc)'}"></div></div>
+    <div style="width:56px;height:56px;border:1px solid var(--border);border-radius:6px;background:var(--panel);display:flex;align-items:center;justify-content:center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D9E0D6" stroke-width="1.6"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><path d="M9 13a3 3 0 0 0 5.2 2M15 12a3 3 0 0 0-5.2-2"/></svg></div>
+  </div>
+  <div style="height:8px"></div>
+  <div style="text-align:center;font-family:NSK,sans-serif;font-size:11px;color:var(--dim)">탭 = 사진 · 꾹 누르고 있기 = 클립 (최대 10초)</div>`;
+}
+function card({ img, mode, rows = 24, stamp = true, width = 330 }) {
+  const t = rows / 24, ph = Math.round((width - 20) * 4 / 3);
+  return `<div class="win" style="width:${width}px">
+    <div class="tb"><span>${now.file}.BMP - Picture Viewer</span><i>_</i><i>x</i></div>
+    <div class="ph"><div class="pic" style="height:${ph}px"><img src="img/${img}">
+      ${t < 1 ? `<div style="position:absolute;left:0;right:0;top:${ph * t}px;bottom:0;background:var(--deep)"></div><div style="position:absolute;left:0;right:0;top:${ph * t}px;height:2px;background:var(--acc)"></div>` : ''}
+      ${t >= 1 && stamp ? `<div class="stamp" style="right:8px;bottom:6px;font-size:11px">${now.stamp}</div>` : ''}</div>
+      <div class="meta"><span>10.01.2026 13:57</span><span>camera.exe</span></div></div>
+    <div class="st"><span>480 x 640 · ${mode}</span><span>${t >= 1 ? 'done' : 'printing…'}</span></div></div>`;
+}
+function bar(t) { const n = Math.round(t * 22); return `[${'█'.repeat(n)}${'░'.repeat(22 - n)}]`; }
+function printScreen({ img, mode, rows }) {
+  const t = rows / 24;
+  return LOGS([[`C:\\&gt; capture --mode=${mode.toLowerCase().replace('soft35', 'soft')}`], ['frame grabbed ......', 1], ['strip gps/exif .....', 1], [`printing ${now.file}.BMP`]]) + `
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:12px 0">${card({ img, mode, rows, width: 318 })}</div>
+  <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim)"><span>rendering line ${String(rows).padStart(2, '0')}/24</span><span class="ok">${Math.round(t * 100)}%</span></div>
+  <div class="bar20" style="margin-top:6px">${bar(t)}</div>
+  <div style="text-align:center;font-size:11px;color:var(--dim);margin-top:14px">don't turn off your computer_ (tap to skip)</div>`;
+}
+function resultScreen({ img, mode }) {
+  return LOGS([[`C:\\&gt; capture --mode=${mode.toLowerCase().replace('soft35', 'soft')}`], ['frame grabbed ......', 1], ['strip gps/exif .....', 1], [`printing ${now.file}.BMP`, 1]]) + `
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:12px 0">${card({ img, mode, stamp: mode !== 'SOFT35', width: 318 })}</div>
+  <div style="text-align:center;font-size:11px;color:var(--acc);height:30px">saved to C:\\PICS\\${now.file}.BMP</div>
+  <div class="row"><div class="btn">SAVE .PNG</div><div class="btn">SAVE .MP4</div></div>
+  <div style="height:8px"></div>
+  <div class="row"><div class="btn">RETAKE</div><div class="btn on">SHARE</div></div>
+  <div style="text-align:center;font-family:NSK,sans-serif;font-size:11px;color:var(--dim);margin-top:10px">.MP4 = 출력되는 과정을 세로 영상으로 저장</div>`;
+}
+function reelScreen({ img, mode }) {
+  // .MP4 영상의 한 장면 (9:16) 을 폰 화면 가득
+  return LOGS([[`C:\\&gt; capture --mode=${mode.toLowerCase()}`], ['frame grabbed ......', 1], ['strip gps/exif .....', 1], [`printing ${now.file}.BMP`]]) + `
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:12px 0">${card({ img, mode, rows: 15, width: 318 })}</div>
+  <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim)"><span>rendering line 15/24</span><span class="ok">63%</span></div>
+  <div class="bar20" style="margin-top:6px">${bar(15 / 24)}</div>
+  <div style="text-align:center;margin-top:26px;font-size:15px;font-weight:700;color:var(--fg)">C:\\&gt; camera.exe<span style="display:inline-block;width:9px;height:16px;background:var(--acc);margin-left:3px;vertical-align:-2px"></span></div>`;
+}
+function modesBoard() {
+  // 세 모드를 큰 줄 3개로: 왼쪽 사진, 오른쪽 이름 · 설명
+  const f = device === 'ipad' ? 2 : (device === 'play' ? 0.78 : 1);
+  const top = C.frameTop - 10 * f, bottom = C.h - 40 * f, gap = 18 * f;
+  const rowH = (bottom - top - gap * 2) / 3, imgW = rowH * 3 / 4;
+  const W = Math.min(C.w - 48 * f, imgW + 300 * f), left = (C.w - W) / 2;
+  const items = [['WEBCAM', 'chelsea-webcam.png', '2003 노트북 웹캠', '큼직한 픽셀 · 바랜 색 · 노이즈 · 날짜 도장'],
+                 ['SOFT35', 'chelsea-soft.png', '90년대 필름 똑딱이', '채도 낮은 파스텔 · 부드러운 대비 · 분홍빛'],
+                 ['DISPO', 'chelsea-dispo.png', '일회용 필름카메라', '따뜻하고 진한 색 · 굵은 입자 · 날짜 도장']];
+  return items.map(([m, img, a, b], i) => `
+    <div style="position:absolute;left:${left}px;top:${top + i * (rowH + gap)}px;width:${W}px;height:${rowH}px;display:flex;gap:${18 * f}px;align-items:center">
+      <div style="position:relative;flex:0 0 ${imgW}px;height:${rowH}px;overflow:hidden;border:1px solid #2B2F29;box-shadow:0 ${16 * f}px ${40 * f}px rgba(0,0,0,.6)">
+        <img src="img/${img}" style="width:100%;height:100%;object-fit:cover;display:block">
+        ${m !== 'SOFT35' ? `<div class="stamp" style="right:${6 * f}px;bottom:${5 * f}px;font-family:JBM;font-size:${10 * f}px">${now.stamp}</div>` : ''}</div>
+      <div style="min-width:0">
+        <div style="font-family:JBM;font-weight:700;color:var(--acc);font-size:${22 * f}px">${m}<span style="display:inline-block;width:${9 * f}px;height:${18 * f}px;background:var(--acc);margin-left:${3 * f}px;vertical-align:${-2 * f}px;opacity:${i === 1 ? 1 : 0}"></span></div>
+        <div style="font-family:NSK,sans-serif;color:#E6ECE3;font-size:${15 * f}px;margin-top:${6 * f}px;font-weight:700">${a}</div>
+        <div style="font-family:NSK,sans-serif;color:var(--dim);font-size:${12.5 * f}px;margin-top:${4 * f}px;line-height:1.5">${b}</div>
+      </div>
+    </div>`).join('');
+}
+
+const SHOTS = {
+  1: () => caption('capture', '찍으면 한 줄씩 출력', '옛 PC 화면처럼, 사진 뷰어에 한 줄씩') + phone(printScreen({ img: 'coffee-dispo.png', mode: 'DISPO', rows: 15 })),
+  2: () => caption('camera.exe', '보이는 그대로 찍혀요', '필터가 찍기 전 화면에도 그대로') + phone(cameraScreen({ img: 'chelsea-soft.png', mode: 'SOFT35', stamp: false })),
+  3: () => caption('dir /modes', '레트로 모드 3가지', '웹캠 · 필름 똑딱이 · 일회용 카메라') + modesBoard(),
+  4: () => caption('record', '꾹 누르면 레트로 클립', '최대 10초, 옛 웹캠처럼 12fps') + phone(cameraScreen({ img: 'rocket-webcam.png', mode: 'WEBCAM', rec: true })),
+  5: () => caption('encode --format=mp4', '출력 과정을 영상으로', '릴스 · 스레드에 바로 올리는 세로 영상') + phone(reelScreen({ img: 'coffee-soft.png', mode: 'SOFT35' })),
+  6: () => caption('type privacy.txt', '서버 없음 · 수집 없음', '위치정보(EXIF)도 지우고 폰 안에서만') + phone(resultScreen({ img: 'rocket-dispo.png', mode: 'DISPO' })),
+};
+document.getElementById('root').innerHTML = `<div class="canvas" style="width:${C.w}px;height:${C.h}px">${SHOTS[shot]()}</div>`;
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 name: camera_exe
 description: "camera.exe — 사진이 레트로 PC 화면처럼 한 줄씩 출력되는 카메라 앱"
 publish_to: "none"
-version: 0.3.0+4
+version: 0.3.0+5
 
 environment:
   sdk: ^3.5.0
@@ -30,7 +30,7 @@ flutter_launcher_icons:
   ios: true
   remove_alpha_ios: true
   android: "ic_launcher"
-  adaptive_icon_background: "#0C0C0C"
+  adaptive_icon_background: "#191918"
   adaptive_icon_foreground: "assets/icon/icon-foreground.png"
 
 flutter:

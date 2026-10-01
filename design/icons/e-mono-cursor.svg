@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<rect width="1024" height="1024" fill="#191918"/>
+<polyline points="168,424 298,525 168,626" fill="none" stroke="#777775" stroke-width="58" stroke-linejoin="miter" stroke-linecap="butt"/>
+<text x="508" y="706" text-anchor="middle" font-family="JBM" font-weight="700" font-size="398" fill="#F6F4EE">c</text>
+<rect x="707" y="487" width="150" height="219" fill="#F45B52"/>
+</svg>

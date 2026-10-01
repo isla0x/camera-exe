@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 
 import '../logic/capture_mode.dart';
+import '../logic/clip_recorder.dart';
 import '../theme/palette.dart';
 import '../widgets/retro.dart';
 
@@ -110,7 +111,7 @@ class _ClipScreenState extends State<ClipScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              LogLine(r'C:\> record --mode=' + widget.mode.flag + ' --fps=12'),
+              LogLine('C:\\> record --mode=${widget.mode.flag} --fps=$clipFps'),
               LogLine('captured $secs s ........', ok: true),
               LogLine('writing ${widget.fileName}', ok: true),
               const SizedBox(height: 16),
@@ -146,6 +147,7 @@ class _ClipScreenState extends State<ClipScreen> {
 
   /// 옛 OS 느낌의 미디어 플레이어 창
   Widget _player() {
+    final secs = widget.seconds.toStringAsFixed(1);
     final aspect = _ready ? _video.value.aspectRatio : 3 / 4;
     return FittedBox(
       fit: BoxFit.scaleDown,
@@ -193,7 +195,7 @@ class _ClipScreenState extends State<ClipScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('12 fps · ${widget.mode.label}', style: const TextStyle(fontSize: 11, color: Palette.winText)),
+                    Text('$clipFps fps · ${widget.mode.label}', style: const TextStyle(fontSize: 11, color: Palette.winText)),
                     Text('$secs s ↻', style: const TextStyle(fontSize: 11, color: Palette.winText)),
                   ],
                 ),

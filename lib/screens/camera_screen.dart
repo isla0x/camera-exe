@@ -228,8 +228,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final o = c.value.deviceOrientation;
       final portrait = o == DeviceOrientation.portraitUp || o == DeviceOrientation.portraitDown;
       final front = c.description.lensDirection == CameraLensDirection.front;
-      _recRotation = frameRotation(sensorOrientation: c.description.sensorOrientation, deviceDegrees: _deviceDegrees(o), front: front);
-      _recMirror = front;
+      (_recRotation, _recMirror) = clipTransform(
+        ios: Platform.isIOS,
+        sensorOrientation: c.description.sensorOrientation,
+        deviceDegrees: _deviceDegrees(o),
+        front: front,
+      );
+      // 녹화하는 동안은 방향을 고정한다 (중간에 폰을 돌려도 영상이 돌아가지 않게)
+      try {
+        await c.lockCaptureOrientation(o);
+      } catch (_) {}
       final (w, h) = clipSize(_quality, portrait: portrait);
       final now = DateTime.now();
       _recName = 'CLIP_${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.MP4';
@@ -295,6 +303,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       if (c != null && c.value.isStreamingImages) await c.stopImageStream();
     } catch (_) {}
+    _unlockOrientation();
     final secs = rec.frames / clipFps;
     try {
       final frames = await rec.finish();
@@ -326,12 +335,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final c = _controller;
       if (c != null && c.value.isStreamingImages) await c.stopImageStream();
     } catch (_) {}
+    _unlockOrientation();
     if (rec != null) {
       await rec.cancel();
       File(rec.path).delete().catchError((_) => File(rec.path));
     }
     if (mounted) setState(() => _busy = false);
     if (message != null) _toast(message);
+  }
+
+  void _unlockOrientation() {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+    c.unlockCaptureOrientation().catchError((_) {});
   }
 
   void _toast(String m) {

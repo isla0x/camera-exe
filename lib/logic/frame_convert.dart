@@ -28,6 +28,14 @@ int frameRotation({required int sensorOrientation, required int deviceDegrees, r
   return front ? (sensorOrientation + deviceDegrees) % 360 : (sensorOrientation - deviceDegrees + 360) % 360;
 }
 
+/// 클립 프레임을 어떻게 돌리고 뒤집을지.
+///   iOS: camera 플러그인이 미리보기 프레임을 이미 폰 방향대로 세워 주고, 앞카메라는 좌우도 뒤집어 준다 → 그대로.
+///   Android: 센서 방향 그대로 오니 [frameRotation] 만큼 돌리고, 앞카메라는 좌우 반전.
+(int, bool) clipTransform({required bool ios, required int sensorOrientation, required int deviceDegrees, required bool front}) {
+  if (ios) return (0, false);
+  return (frameRotation(sensorOrientation: sensorOrientation, deviceDegrees: deviceDegrees, front: front), front);
+}
+
 int _c(double v) => v < 0 ? 0 : (v > 255 ? 255 : v.round());
 
 /// 프레임을 [rotation] 만큼 돌리고(앞카메라면 좌우 반전), 가운데를 [outW] x [outH] 비율로 잘라

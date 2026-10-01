@@ -54,6 +54,13 @@ void main() {
     expect(frameRotation(sensorOrientation: 270, deviceDegrees: 0, front: true), 270);
   });
 
+  test('iOS 는 플러그인이 이미 세워 주니 그대로, Android 는 돌리고 앞카메라 반전', () {
+    expect(clipTransform(ios: true, sensorOrientation: 90, deviceDegrees: 0, front: false), (0, false));
+    expect(clipTransform(ios: true, sensorOrientation: 90, deviceDegrees: 0, front: true), (0, false));
+    expect(clipTransform(ios: false, sensorOrientation: 90, deviceDegrees: 0, front: false), (90, false));
+    expect(clipTransform(ios: false, sensorOrientation: 270, deviceDegrees: 0, front: true), (270, true));
+  });
+
   test('클립 크기: 세로 480x640 · 가로 640x480 · MAX 720x960, 모두 16의 배수', () {
     expect(clipSize(CaptureQuality.x2, portrait: true), (480, 640));
     expect(clipSize(CaptureQuality.x2, portrait: false), (640, 480));

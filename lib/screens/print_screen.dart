@@ -36,6 +36,7 @@ class PrintScreen extends StatefulWidget {
     required this.mirror,
     required this.takenAt,
     this.quality = CaptureQuality.x2,
+    this.turn = 0,
   }) : photo = null;
 
   /// 이미 출력한 사진을 다시 볼 때 (애니메이션 없이 바로 결과).
@@ -44,13 +45,17 @@ class PrintScreen extends StatefulWidget {
         mode = photo.shot.mode,
         mirror = false,
         takenAt = photo.takenAt,
-        quality = photo.shot.quality;
+        quality = photo.shot.quality,
+        turn = 0;
 
   final Uint8List? jpeg;
   final CaptureMode mode;
   final bool mirror;
   final DateTime takenAt;
   final CaptureQuality quality;
+
+  /// 폰을 눕혀 찍었을 때 사진을 돌릴 각도 (uprightTurn)
+  final int turn;
   final PrintedPhoto? photo;
 
   @override
@@ -106,7 +111,7 @@ class _PrintScreenState extends State<PrintScreen> {
 
   Future<void> _process() async {
     try {
-      final shot = await processShotInBackground(widget.jpeg!, widget.mode, mirror: widget.mirror, quality: widget.quality);
+      final shot = await processShotInBackground(widget.jpeg!, widget.mode, mirror: widget.mirror, quality: widget.quality, turn: widget.turn);
       if (!mounted) return;
       setState(() => _photo = PrintedPhoto(shot: shot, fileName: _fileName, takenAt: widget.takenAt));
       _startPrinting();

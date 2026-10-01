@@ -28,12 +28,27 @@ int frameRotation({required int sensorOrientation, required int deviceDegrees, r
   return front ? (sensorOrientation + deviceDegrees) % 360 : (sensorOrientation - deviceDegrees + 360) % 360;
 }
 
-/// 클립 프레임을 어떻게 돌리고 뒤집을지.
-///   iOS: camera 플러그인이 미리보기 프레임을 이미 폰 방향대로 세워 주고, 앞카메라는 좌우도 뒤집어 준다 → 그대로.
-///   Android: 센서 방향 그대로 오니 [frameRotation] 만큼 돌리고, 앞카메라는 좌우 반전.
-(int, bool) clipTransform({required bool ios, required int sensorOrientation, required int deviceDegrees, required bool front}) {
+/// 폰을 얼마나 돌려 들었는지(deviceDegrees)로, 세로(폰 기준)로 찍힌 그림을 시계 방향으로 몇 도 돌려야
+/// 세상이 바로 서는지. 거울 반전이 안 된 그림 기준.
+///   왼쪽으로 눕힘(landscapeLeft, 90): 폰 윗부분이 왼쪽 → 그림 속 세상이 시계 방향으로 누워 있다 → 270
+///   오른쪽으로 눕힘(landscapeRight, 270) → 90 · 거꾸로(180) → 180
+int uprightTurn(int deviceDegrees) => switch (deviceDegrees) { 90 => 270, 270 => 90, 180 => 180, _ => 0 };
+
+/// 뷰파인더용: 폰 화면(세로) 기준으로 세운다.
+///   iOS: 카메라 방향을 세로로 고정해 두어 프레임이 이미 세로 · 앞카메라는 거울 → 그대로.
+///   Android: 센서 방향 그대로 오니 센서 각도만큼 돌리고, 앞카메라는 거울처럼 좌우 반전.
+(int, bool) previewTransform({required bool ios, required int sensorOrientation, required bool front}) {
   if (ios) return (0, false);
-  return (frameRotation(sensorOrientation: sensorOrientation, deviceDegrees: deviceDegrees, front: front), front);
+  return (frameRotation(sensorOrientation: sensorOrientation, deviceDegrees: 0, front: front), front);
+}
+
+/// 클립용: 뷰파인더처럼 세운 뒤, 폰을 눕혀 들었으면 세상이 바로 서도록 더 돌린다.
+///   iOS 앞카메라 프레임은 이미 거울이라, 거울 그림을 돌릴 때는 방향이 반대다.
+(int, bool) clipTransform({required bool ios, required int sensorOrientation, required int deviceDegrees, required bool front}) {
+  final up = uprightTurn(deviceDegrees);
+  if (ios) return (front ? (360 - up) % 360 : up, false);
+  final ui = frameRotation(sensorOrientation: sensorOrientation, deviceDegrees: 0, front: front);
+  return ((ui + up) % 360, front);
 }
 
 int _c(double v) => v < 0 ? 0 : (v > 255 ? 255 : v.round());

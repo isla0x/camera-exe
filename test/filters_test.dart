@@ -32,6 +32,21 @@ void main() {
     expect((base.width / base.height - 3 / 4).abs(), lessThan(0.02));
   });
 
+  test('눕혀 찍으면(turn 270) 세로로 찍힌 사진을 돌려 가로 640x480', () {
+    final b = prepareBase(_portraitJpeg(), turn: 270);
+    expect([b.width, b.height], [640, 480]);
+  });
+
+  test('뷰파인더 프레임: 세 모드 · 두 화질 모두 같은 크기의 RGBA', () {
+    const w = 480, h = 640;
+    final rgb = Uint8List(w * h * 3)..fillRange(0, w * h * 3, 120);
+    for (final mode in CaptureMode.values) {
+      for (final q in CaptureQuality.values) {
+        expect(previewFrame(mode, q, rgb, w, h, seed: 2).length, w * h * 4, reason: '${mode.name} ${q.name}');
+      }
+    }
+  });
+
   test('MAX: 폰 카메라 세로 1080x1920 → 1080x1440', () {
     final base = prepareBase(_bigJpeg(portrait: true), quality: CaptureQuality.max);
     expect([base.width, base.height], [1080, 1440]);

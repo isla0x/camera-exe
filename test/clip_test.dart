@@ -54,11 +54,26 @@ void main() {
     expect(frameRotation(sensorOrientation: 270, deviceDegrees: 0, front: true), 270);
   });
 
-  test('iOS 는 플러그인이 이미 세워 주니 그대로, Android 는 돌리고 앞카메라 반전', () {
+  test('세워 들면: iOS 는 그대로, Android 는 센서 각도만큼 돌리고 앞카메라 반전', () {
     expect(clipTransform(ios: true, sensorOrientation: 90, deviceDegrees: 0, front: false), (0, false));
     expect(clipTransform(ios: true, sensorOrientation: 90, deviceDegrees: 0, front: true), (0, false));
     expect(clipTransform(ios: false, sensorOrientation: 90, deviceDegrees: 0, front: false), (90, false));
     expect(clipTransform(ios: false, sensorOrientation: 270, deviceDegrees: 0, front: true), (270, true));
+  });
+
+  test('눕혀 들면 세상이 바로 서도록 더 돌린다 (iOS 앞카메라는 거울이라 반대로)', () {
+    expect(uprightTurn(0), 0);
+    expect(uprightTurn(90), 270); // 왼쪽으로 눕힘
+    expect(uprightTurn(270), 90); // 오른쪽으로 눕힘
+    expect(clipTransform(ios: true, sensorOrientation: 90, deviceDegrees: 90, front: false), (270, false));
+    expect(clipTransform(ios: true, sensorOrientation: 90, deviceDegrees: 90, front: true), (90, false));
+    expect(clipTransform(ios: false, sensorOrientation: 90, deviceDegrees: 90, front: false), (0, false));
+  });
+
+  test('뷰파인더는 폰 화면 기준: iOS 그대로, Android 센서 각도', () {
+    expect(previewTransform(ios: true, sensorOrientation: 90, front: true), (0, false));
+    expect(previewTransform(ios: false, sensorOrientation: 90, front: false), (90, false));
+    expect(previewTransform(ios: false, sensorOrientation: 270, front: true), (270, true));
   });
 
   test('클립 크기: 세로 480x640 · 가로 640x480 · MAX 720x960, 모두 16의 배수', () {

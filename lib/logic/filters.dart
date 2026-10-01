@@ -82,9 +82,15 @@ int _maxi(int a, int b) => a > b ? a : b;
 /// 카메라가 준 JPEG 을 처리한다. 무거우니 [processShotInBackground] 로 돌린다.
 ///
 /// 픽셀만 다시 그려서 PNG 로 만들기 때문에 위치정보 같은 EXIF 는 결과에 남지 않는다.
-ProcessedShot processShot(Uint8List jpeg, CaptureMode mode, {bool mirror = false, CaptureQuality quality = CaptureQuality.x2}) {
+ProcessedShot processShot(
+  Uint8List jpeg,
+  CaptureMode mode, {
+  bool mirror = false,
+  CaptureQuality quality = CaptureQuality.x2,
+  int turn = 0,
+}) {
   final spec = QualitySpec.of(quality);
-  final base = prepareBase(jpeg, mirror: mirror, quality: quality);
+  final base = prepareBase(jpeg, mirror: mirror, quality: quality, turn: turn);
   ProcessedShot image(img.Image out) => ProcessedShot(
         mode: mode,
         quality: quality,
@@ -114,22 +120,26 @@ Future<ProcessedShot> processShotInBackground(
   CaptureMode mode, {
   bool mirror = false,
   CaptureQuality quality = CaptureQuality.x2,
+  int turn = 0,
 }) {
-  return Isolate.run(() => processShot(jpeg, mode, mirror: mirror, quality: quality));
+  return Isolate.run(() => processShot(jpeg, mode, mirror: mirror, quality: quality, turn: turn));
 }
 
 /// 방향을 바로잡고, 가운데를 4:3 (세로 사진이면 3:4) 로 잘라 화질에 맞는 크기로 줄인다.
 /// (촬영 화면의 뷰파인더도 가운데 3:4 를 보여준다. 폰을 눕히면 그대로 4:3 이 된다.)
-img.Image prepareBase(Uint8List jpeg, {bool mirror = false, CaptureQuality quality = CaptureQuality.x2}) {
+///
+/// [turn]: 폰을 눕혀 찍었을 때 세상이 바로 서도록 시계 방향으로 더 돌릴 각도 (uprightTurn).
+/// 카메라 방향을 세로로 고정해 두어서, 찍힌 사진은 늘 폰 기준 세로다.
+img.Image prepareBase(Uint8List jpeg, {bool mirror = false, CaptureQuality quality = CaptureQuality.x2, int turn = 0}) {
   final decoded = img.decodeImage(jpeg);
   if (decoded == null) {
     throw const FormatException('사진을 읽지 못했어요.');
   }
   var src = img.bakeOrientation(decoded);
+  if (turn % 360 != 0) src = img.copyRotate(src, angle: turn);
   if (mirror) src = img.flipHorizontal(src);
   final spec = QualitySpec.of(quality);
-  // 폰을 세워 찍으면 세로(3:4), 눕혀 찍으면 가로(4:3). 카메라가 폰 방향을 사진에 적어 주고
-  // bakeOrientation 이 그 방향대로 돌려 놓았으니, 사진 모양만 보면 된다.
+  // 폰을 세워 찍으면 세로(3:4), 눕혀 찍으면 가로(4:3). 위에서 세상이 바로 서게 돌려 놓았으니 사진 모양만 보면 된다.
   final portrait = src.height > src.width;
   final tw = portrait ? spec.baseHeight : spec.baseWidth;
   final th = portrait ? spec.baseWidth : spec.baseHeight;
@@ -354,4 +364,30 @@ img.Image tripFilter(img.Image base, {int seed = 0}) {
     }
   }
   return _fromRgb(w, h, out);
+}
+
+
+/// 뷰파인더 한 장: 저장할 때와 같은 필터를 같은 비율로 입혀 RGBA 로 돌려준다 (크기는 그대로).
+/// [seed] 로 노이즈 · 필름 입자가 프레임마다 움직인다.
+Uint8List previewFrame(CaptureMode mode, CaptureQuality quality, Uint8List rgb, int w, int h, {int seed = 0}) {
+  final base = img.Image.fromBytes(width: w, height: h, bytes: rgb.buffer, numChannels: 3);
+  final q = QualitySpec.of(quality);
+  // WEBCAM 픽셀 크기를 저장할 때와 같은 비율로 (2X 는 가로의 절반 칸, MAX 는 픽셀화 없음)
+  final frac = q.webcamLowWidth / q.baseWidth;
+  final out = switch (mode) {
+    CaptureMode.webcam => webcamFilter(
+        base,
+        spec: QualitySpec(
+          baseWidth: w,
+          baseHeight: h,
+          webcamLowWidth: (w * frac).round(),
+          webcamScale: frac >= 1 ? 1 : (1 / frac).round(),
+        ),
+        seed: seed,
+      ),
+    CaptureMode.butter => butterFilter(base),
+    CaptureMode.trip => tripFilter(base, seed: seed),
+  };
+  final rgba = out.numChannels == 4 ? out : out.convert(numChannels: 4, alpha: 255);
+  return rgba.getBytes(order: img.ChannelOrder.rgba);
 }

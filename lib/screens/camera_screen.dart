@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../logic/capture_mode.dart';
 import '../logic/clip_recorder.dart';
 import '../logic/frame_convert.dart';
+import '../logic/preview_worker.dart';
 import '../theme/palette.dart';
 import '../widgets/retro.dart';
 import 'clip_screen.dart';
@@ -41,6 +43,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _cursorOn = true;
   Timer? _blink;
 
+  // ── 뷰파인더: 저장할 때와 같은 필터를 실시간으로 ──
+  PreviewWorker? _worker;
+  ui.Image? _previewImg;
+
   // ── 클립 (셔터를 꾹 누르는 동안 녹화) ──
   ClipRecorder? _rec;
   bool _recording = false;
@@ -61,6 +67,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
     _start();
     _loadQuality();
+    PreviewWorker.spawn().then((w) {
+      if (mounted) {
+        _worker = w;
+      } else {
+        w.dispose();
+      }
+    });
   }
 
   Future<void> _loadQuality() async {
@@ -85,6 +98,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _blink?.cancel();
     _recTimer?.cancel();
     _rec?.cancel();
+    _worker?.dispose();
+    _previewImg?.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -161,7 +176,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         await c.dispose();
         return;
       }
-      setState(() => _controller = c);
+      final oldImg = _previewImg;
+      setState(() {
+        _controller = c;
+        _previewImg = null; // 카메라를 바꾸면 앞 카메라의 그림은 지운다
+      });
+      oldImg?.dispose();
+      // 카메라 방향은 세로(폰 기준)로 고정: 미리보기 · 사진 · 클립이 늘 같은 방향으로 온다.
+      // 폰을 눕혀 찍은 것은 찍은 뒤에 우리가 돌린다 (uprightTurn).
+      try {
+        await c.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      } catch (_) {}
+      try {
+        await c.startImageStream(_onStream);
+      } catch (e) {
+        debugPrint('camera.exe: 미리보기 프레임 실패 $e');
+      }
     } finally {
       _opening = false;
     }
@@ -180,13 +210,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     HapticFeedback.mediumImpact();
     setState(() => _busy = true);
     try {
+      final held = c.value.deviceOrientation; // 셔터를 누른 순간의 폰 방향
       final file = await c.takePicture();
       final bytes = await file.readAsBytes();
       if (!mounted) return;
       final mirror = c.description.lensDirection == CameraLensDirection.front;
+      final turn = uprightTurn(_deviceDegrees(held));
       final result = await Navigator.of(context).push<PrintedPhoto>(
         MaterialPageRoute(
-          builder: (_) => PrintScreen(jpeg: bytes, mode: _mode, mirror: mirror, takenAt: DateTime.now(), quality: _quality),
+          builder: (_) => PrintScreen(
+            jpeg: bytes,
+            mode: _mode,
+            mirror: mirror,
+            takenAt: DateTime.now(),
+            quality: _quality,
+            turn: turn,
+          ),
         ),
       );
       if (result != null && mounted) setState(() => _last = result);
@@ -216,7 +255,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _startClip() async {
     final c = _controller;
-    if (c == null || !c.value.isInitialized || _busy || _recording || c.value.isStreamingImages) return;
+    if (c == null || !c.value.isInitialized || _busy || _recording) return;
     HapticFeedback.heavyImpact();
     _stopAsked = false;
     setState(() {
@@ -236,10 +275,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
       _recRotation = t.$1;
       _recMirror = t.$2;
-      // 녹화하는 동안은 방향을 고정한다 (중간에 폰을 돌려도 영상이 돌아가지 않게)
-      try {
-        await c.lockCaptureOrientation(o);
-      } catch (_) {}
       final (w, h) = clipSize(_quality, portrait: portrait);
       final now = DateTime.now();
       _recName = 'CLIP_${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.MP4';
@@ -256,7 +291,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         stamp: "'${two(now.year % 100)} ${two(now.month)} ${two(now.day)}",
       );
       _lastFrameAt = null;
-      await c.startImageStream(_onFrame);
+      if (!c.value.isStreamingImages) await c.startImageStream(_onStream);
       _recTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
         if (!mounted) return;
         setState(() {});
@@ -271,24 +306,51 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  void _onFrame(CameraImage im) {
+  /// 카메라가 보내는 미리보기 프레임 (초당 약 30장). 클립 녹화와 필터 뷰파인더에 쓴다.
+  void _onStream(CameraImage im) {
+    final c = _controller;
+    if (c == null) return;
+    RawFrame? raw;
+    RawFrame frame() => raw ??= RawFrame(
+          width: im.width,
+          height: im.height,
+          planes: [for (final p in im.planes) p.bytes],
+          rowStrides: [for (final p in im.planes) p.bytesPerRow],
+          pixelStrides: [for (final p in im.planes) p.bytesPerPixel ?? 1],
+          bgra: im.format.group == ImageFormatGroup.bgra8888,
+        );
+
+    // 1) 클립: 12fps (약 83ms 마다 한 장)
     final rec = _rec;
-    if (rec == null || !_recording) return;
-    final now = DateTime.now();
-    final last = _lastFrameAt;
-    // 12fps: 약 83ms 마다 한 장
-    if (last != null && now.difference(last).inMicroseconds < 1000000 ~/ clipFps - 4000) return;
-    _lastFrameAt = last == null ? now : last.add(Duration(microseconds: 1000000 ~/ clipFps));
-    if (now.difference(_lastFrameAt!).inMilliseconds > 200) _lastFrameAt = now; // 많이 밀렸으면 다시 맞춘다
-    final raw = RawFrame(
-      width: im.width,
-      height: im.height,
-      planes: [for (final p in im.planes) p.bytes],
-      rowStrides: [for (final p in im.planes) p.bytesPerRow],
-      pixelStrides: [for (final p in im.planes) p.bytesPerPixel ?? 1],
-      bgra: im.format.group == ImageFormatGroup.bgra8888,
-    );
-    rec.add(frameToRgb(raw, rotation: _recRotation, mirror: _recMirror, outW: rec.width, outH: rec.height));
+    if (rec != null && _recording) {
+      final now = DateTime.now();
+      final last = _lastFrameAt;
+      if (last == null || now.difference(last).inMicroseconds >= 1000000 ~/ clipFps - 4000) {
+        _lastFrameAt = last == null ? now : last.add(const Duration(microseconds: 1000000 ~/ clipFps));
+        if (now.difference(_lastFrameAt!).inMilliseconds > 200) _lastFrameAt = now; // 많이 밀렸으면 다시 맞춘다
+        rec.add(frameToRgb(frame(), rotation: _recRotation, mirror: _recMirror, outW: rec.width, outH: rec.height));
+      }
+    }
+
+    // 2) 뷰파인더: 필터 일꾼이 쉬고 있을 때만 한 장 (바쁘면 건너뛴다). 결과 화면이 위에 떠 있으면 쉰다.
+    final w = _worker;
+    if (w == null || w.busy || !mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    final front = c.description.lensDirection == CameraLensDirection.front;
+    final t = previewTransform(ios: Platform.isIOS, sensorOrientation: c.description.sensorOrientation, front: front);
+    final (pw, ph) = previewSize(_quality);
+    final rgb = frameToRgb(frame(), rotation: t.$1, mirror: t.$2, outW: pw, outH: ph);
+    w.run(rgb, pw, ph, _mode, _quality).then((rgba) {
+      if (rgba == null || !mounted) return;
+      ui.decodeImageFromPixels(rgba, pw, ph, ui.PixelFormat.rgba8888, (image) {
+        if (!mounted || _controller != c) {
+          image.dispose();
+          return;
+        }
+        final old = _previewImg;
+        setState(() => _previewImg = image);
+        old?.dispose();
+      });
+    });
   }
 
   Future<void> _stopClip() async {
@@ -301,11 +363,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _recording = false;
     _rec = null;
     _recTimer?.cancel();
-    final c = _controller;
-    try {
-      if (c != null && c.value.isStreamingImages) await c.stopImageStream();
-    } catch (_) {}
-    _unlockOrientation();
     final secs = rec.frames / clipFps;
     try {
       final frames = await rec.finish();
@@ -333,23 +390,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _rec = null;
     _recording = false;
     _recTimer?.cancel();
-    try {
-      final c = _controller;
-      if (c != null && c.value.isStreamingImages) await c.stopImageStream();
-    } catch (_) {}
-    _unlockOrientation();
     if (rec != null) {
       await rec.cancel();
       File(rec.path).delete().catchError((_) => File(rec.path));
     }
     if (mounted) setState(() => _busy = false);
     if (message != null) _toast(message);
-  }
-
-  void _unlockOrientation() {
-    final c = _controller;
-    if (c == null || !c.value.isInitialized) return;
-    c.unlockCaptureOrientation().catchError((_) {});
   }
 
   void _toast(String m) {
@@ -474,7 +520,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (c != null && c.value.isInitialized)
+            // 필터를 입힌 실시간 그림 = 저장되는 그림. 첫 장이 오기 전에는 카메라 원본에 비슷한 색만.
+            if (c != null && c.value.isInitialized && _previewImg != null)
+              RawImage(image: _previewImg, fit: BoxFit.cover, filterQuality: FilterQuality.medium)
+            else if (c != null && c.value.isInitialized)
               ColorFiltered(colorFilter: previewFilter(_mode), child: _CoverPreview(controller: c))
             else
               Center(
@@ -487,7 +536,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   ),
                 ),
               ),
-            if (_mode == CaptureMode.webcam) const Scanlines(opacity: 0.18),
+            // 날짜 도장: 저장되는 사진과 같은 자리 · 같은 모양
+            if (_mode != CaptureMode.butter)
+              Positioned(
+                right: 10,
+                bottom: 10,
+                child: Text(
+                  "'${two(now.year % 100)} ${two(now.month)} ${two(now.day)}",
+                  style: const TextStyle(
+                    fontFamily: Palette.mono,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Palette.stamp,
+                    shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1))],
+                  ),
+                ),
+              ),
             Positioned(
               top: 10,
               left: 10,

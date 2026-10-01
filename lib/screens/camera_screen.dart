@@ -228,12 +228,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final o = c.value.deviceOrientation;
       final portrait = o == DeviceOrientation.portraitUp || o == DeviceOrientation.portraitDown;
       final front = c.description.lensDirection == CameraLensDirection.front;
-      (_recRotation, _recMirror) = clipTransform(
+      final t = clipTransform(
         ios: Platform.isIOS,
         sensorOrientation: c.description.sensorOrientation,
         deviceDegrees: _deviceDegrees(o),
         front: front,
       );
+      _recRotation = t.$1;
+      _recMirror = t.$2;
       // 녹화하는 동안은 방향을 고정한다 (중간에 폰을 돌려도 영상이 돌아가지 않게)
       try {
         await c.lockCaptureOrientation(o);

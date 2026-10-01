@@ -1,0 +1,54 @@
+:root {
+  --bg: #0c0c0c;
+  --bar: #1a1a1a;
+  --fg: #cccccc;
+  --hi: #f2f2f2;
+  --dim: #8a8a8a;
+  --ok: #8be38b;
+  --cmd: #8be38b;
+  --tag: #f2a33a;
+  --line: #2a2a2a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "SF Mono", ui-monospace, Menlo, Consolas, "D2Coding", "Nanum Gothic Coding", monospace;
+  font-size: 15px;
+  line-height: 1.7;
+}
+main { max-width: 720px; margin: 0 auto; padding: 0 16px 48px; }
+.bar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 -16px 24px; padding: 12px 16px;
+  background: var(--bar); border-bottom: 1px solid var(--line);
+  color: var(--hi); font-size: 14px;
+}
+.bar .prompt { color: var(--ok); font-weight: 700; }
+.bar nav { margin-left: auto; display: flex; gap: 4px; }
+.bar nav a { color: var(--dim); text-decoration: none; padding: 10px 10px; }
+.bar nav a[aria-current="page"] { background: var(--fg); color: var(--bg); }
+.cmd { margin: 0 0 8px; }
+.dim { color: var(--dim); }
+h1 { color: var(--hi); font-size: 26px; margin: 16px 0 4px; }
+h2 { color: var(--hi); font-size: 18px; margin: 32px 0 8px; }
+h2::before { content: "## "; color: var(--dim); }
+h3 { color: var(--tag); font-size: 15px; margin: 20px 0 4px; }
+.lead { font-size: 16px; color: var(--hi); }
+strong { color: var(--hi); }
+a { color: var(--cmd); }
+code { color: var(--cmd); font-family: inherit; }
+ul { padding-left: 20px; }
+li::marker { color: var(--ok); }
+hr { border: 0; border-top: 1px dashed var(--line); margin: 40px 0 0; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); }
+th { color: var(--dim); font-weight: 400; }
+td:first-child { white-space: nowrap; padding-right: 16px; }
+@media (max-width: 520px) { td:first-child { white-space: normal; } }
+.cursor { color: var(--ok); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }

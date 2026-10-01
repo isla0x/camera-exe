@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>camera.exe 지원</title>
+<meta name="description" content="camera.exe: 찍은 사진이 옛 PC 화면처럼 한 줄씩 출력되는 레트로 카메라. 사용법, 자주 묻는 질문, 문의.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<header class="bar"><span class="prompt">&gt;_</span> camera.exe <nav><a href="./" aria-current="page">지원</a><a href="privacy.html">개인정보</a></nav></header>
+
+<p class="cmd"><span class="dim">C:\&gt;</span> camera.exe /help</p>
+
+<h1>camera.exe</h1>
+<p class="lead">찍은 사진이 옛 PC 화면처럼 한 줄씩 "출력"되는 레트로 카메라예요. 필터는 찍기 전 화면에도 그대로 보여서, 보이는 그대로 찍혀요.</p>
+
+<h2>모드</h2>
+<table>
+<thead><tr><th scope="col">모드</th><th scope="col">느낌</th></tr></thead>
+<tbody>
+<tr><td><code>WEBCAM</code></td><td>2003년 노트북 웹캠. 큼직한 픽셀, 바랜 색, 자글자글한 노이즈, 주황 날짜 도장</td></tr>
+<tr><td><code>SOFT35</code></td><td>90년대 필름 똑딱이. 채도 낮은 파스텔, 부드러운 대비, 밝은 곳은 분홍빛</td></tr>
+<tr><td><code>DISPO</code></td><td>일회용 필름카메라. 따뜻하고 진한 색, 가장자리 어둠, 굵은 입자, 날짜 도장</td></tr>
+</tbody>
+</table>
+
+<h2>이렇게 써요</h2>
+<table>
+<thead><tr><th scope="col">기능</th><th scope="col">설명</th></tr></thead>
+<tbody>
+<tr><td>사진</td><td>셔터를 탭하면 사진이 옛 사진 뷰어 창에 한 줄씩 출력돼요. 출력 중 화면을 탭하면 바로 끝까지 나와요.</td></tr>
+<tr><td>클립</td><td>셔터를 꾹 누르고 있는 동안 최대 10초 녹화돼요. 옛 웹캠처럼 살짝 끊기는 12fps, 소리는 없어요.</td></tr>
+<tr><td>화질 (RES)</td><td><code>2X</code> 는 레트로 느낌을 살린 640x480, <code>MAX</code> 는 최대 1440x1080. 사진과 클립 모두에 적용돼요.</td></tr>
+<tr><td>방향</td><td>폰을 세워 찍으면 세로, 눕혀 찍으면 가로 사진이 나와요.</td></tr>
+<tr><td>SAVE .PNG</td><td>사진 뷰어 창 그대로 사진 앱에 저장</td></tr>
+<tr><td>SAVE .MP4</td><td>사진이 한 줄씩 출력되는 과정을 세로 영상(1080x1920)으로 저장. 릴스 · 스레드에 바로 올릴 수 있어요.</td></tr>
+<tr><td>SHARE</td><td>다른 앱으로 바로 보내기</td></tr>
+</tbody>
+</table>
+
+<h2>자주 묻는 질문</h2>
+<h3>찍은 사진이 어디에 저장되나요?</h3>
+<p>SAVE 를 누를 때만 폰의 사진 앱에 저장돼요. 누르지 않으면 앱을 나갈 때 사라져요.</p>
+<h3>사진에 위치정보가 남나요?</h3>
+<p>아니요. 필터를 입히면서 픽셀을 새로 그리기 때문에 위치정보(GPS) 같은 촬영 정보(EXIF)는 남지 않아요.</p>
+<h3>카메라나 사진 권한을 거절했어요</h3>
+<p>설정 → camera.exe 에서 카메라 · 사진(추가) 권한을 켜 주세요.</p>
+<h3>클립에 소리가 없어요</h3>
+<p>옛 웹캠 영상처럼 소리 없이 찍혀요. 마이크 권한도 쓰지 않아요.</p>
+
+<h2>문의</h2>
+<p>버그 제보와 기능 제안은 <a href="https://github.com/isla0x/camera-exe/issues">GitHub 이슈</a>로 남겨 주세요. 폰 기종과 어떤 모드에서 생겼는지 적어 주시면 빨리 고칠 수 있어요.</p>
+
+<p class="cmd"><span class="dim">C:\&gt;</span> <span class="cursor">_</span></p>
+</main>
+</body>
+</html>

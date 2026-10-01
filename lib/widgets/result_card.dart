@@ -90,7 +90,7 @@ class ResultCard extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('$baseWidth x $baseHeight · ${shot.mode.label}', style: _small(Palette.winText)),
+                Text('${shot.resWidth} x ${shot.resHeight} · ${shot.mode.label}', style: _small(Palette.winText)),
                 Text(done ? 'done' : 'printing…', style: _small(Palette.winText)),
               ],
             ),
@@ -140,7 +140,8 @@ class _ShotView extends StatelessWidget {
         return Stack(
           fit: StackFit.expand,
           children: [
-            Image.memory(shot.png!, fit: BoxFit.cover, filterQuality: FilterQuality.none, gaplessPlayback: true),
+            // 사진이 화면보다 커서 줄여 그린다: 부드럽게 줄여야 계단 · 반짝임이 안 생긴다.
+            Image.memory(shot.png!, fit: BoxFit.cover, filterQuality: FilterQuality.medium, gaplessPlayback: true),
             // 아직 출력 안 된 아래쪽은 까맣게
             if (t < 1)
               Positioned(

@@ -10,7 +10,7 @@ class VideoWriter {
 
   /// 1080 x 1920 으로 열어 보고, 폰이 못 하면 720 x 1280 으로.
   static Future<VideoWriter> open(String path, {int fps = 30}) async {
-    const sizes = [(1080, 1920, 8000000), (720, 1280, 5000000)];
+    const sizes = [(1080, 1920, 14000000), (720, 1280, 8000000)];
     Object? last;
     for (final (w, h, bitrate) in sizes) {
       try {

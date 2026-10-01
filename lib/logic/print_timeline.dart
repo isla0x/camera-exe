@@ -34,10 +34,12 @@ class PrintTimeline {
 
   static const _logStep = 0.22; // 로그 한 줄 간격 (초)
   static const _printStart = 0.7; // 출력 시작 (초)
-  static const _rowSeconds = 0.105; // 한 줄 출력 (앱과 같다)
+  static const _printSeconds = 2.52; // 출력 전체 (앱과 같다). 줄 수로 나눈다.
   static const _hold = 1.8; // 다 출력한 뒤 멈춰 있는 시간 (초)
 
-  double get _printEnd => _printStart + totalRows * _rowSeconds;
+  double get _rowSeconds => _printSeconds / totalRows;
+
+  double get _printEnd => _printStart + _printSeconds;
 
   /// 영상 전체 길이 (초).
   double get seconds => _printEnd + _hold;

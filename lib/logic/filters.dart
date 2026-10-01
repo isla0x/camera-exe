@@ -8,47 +8,122 @@ import 'capture_mode.dart';
 
 /// 결과 사진 한 장. 이미지 모드는 [png], ASCII 모드는 [asciiLines] 가 채워진다.
 class ProcessedShot {
-  const ProcessedShot({required this.mode, this.png, this.width = 0, this.height = 0, this.asciiLines});
+  const ProcessedShot({
+    required this.mode,
+    this.quality = CaptureQuality.x2,
+    this.png,
+    this.width = 0,
+    this.height = 0,
+    this.resWidth = 0,
+    this.resHeight = 0,
+    this.asciiLines,
+  });
 
   final CaptureMode mode;
+  final CaptureQuality quality;
   final Uint8List? png;
+
+  /// [png] 크기
   final int width;
   final int height;
+
+  /// 기준 해상도 (뷰어 창 아래에 `640 x 480` 처럼 보인다)
+  final int resWidth;
+  final int resHeight;
   final List<String>? asciiLines;
 
   /// 출력 애니메이션이 몇 줄로 나눠서 보여줄지.
   int get printRows => asciiLines?.length ?? 24;
+
+  /// 저장 · 공유할 때 화면을 몇 배로 떠야 사진이 뭉개지지 않는지 (사진 칸은 화면에서 약 300pt).
+  double get exportPixelRatio {
+    final w = asciiLines != null ? (asciiLines!.first.length * 12) : width;
+    return (w / 300).clamp(3.0, 6.0).toDouble();
+  }
 }
 
-/// 기준 해상도. 옛 웹캠처럼 320 x 240 (4:3 가로).
-const baseWidth = 320;
-const baseHeight = 240;
+/// 화질별 크기.
+class QualitySpec {
+  const QualitySpec({
+    required this.baseWidth,
+    required this.baseHeight,
+    required this.webcamLowWidth,
+    required this.webcamScale,
+    required this.crtScale,
+    required this.asciiCols,
+    required this.asciiRows,
+  });
 
-/// 결과 이미지 해상도 (기준의 3배). 저장·공유할 때 흐릿해지지 않게 키운다.
-const outWidth = 960;
-const outHeight = 720;
+  /// 기준 크기 (가운데 4:3 을 잘라 이 크기로 줄인다). MAX 는 사진이 작으면 더 작아질 수 있다.
+  final int baseWidth;
+  final int baseHeight;
 
-/// 글자 그림 크기. 글자 칸이 세로로 길어서(가로:세로 ≈ 0.6) 줄 수를 줄인다.
-const asciiCols = 48;
-const asciiRows = 22;
+  /// WEBCAM: 이 가로 크기로 줄였다가 [webcamScale] 배로 키워 픽셀을 키운다. base 와 같으면 픽셀화 없음.
+  final int webcamLowWidth;
+  final int webcamScale;
+
+  /// CRT: base 를 몇 배로 키우면서 스캔라인을 넣는지.
+  final int crtScale;
+
+  final int asciiCols;
+  final int asciiRows;
+
+  static QualitySpec of(CaptureQuality q) => switch (q) {
+        CaptureQuality.x2 => const QualitySpec(
+            baseWidth: 640,
+            baseHeight: 480,
+            webcamLowWidth: 320,
+            webcamScale: 4,
+            crtScale: 2,
+            asciiCols: 96,
+            asciiRows: 44,
+          ),
+        CaptureQuality.max => const QualitySpec(
+            baseWidth: 1440,
+            baseHeight: 1080,
+            webcamLowWidth: 1440,
+            webcamScale: 1,
+            crtScale: 1,
+            asciiCols: 128,
+            asciiRows: 58,
+          ),
+      };
+}
 
 /// 어두운 곳 → 밝은 곳.
 const asciiRamp = ' .:-=+*#%@';
 
-/// 카메라가 준 JPEG 을 처리한다. 무거우니 `Isolate.run` 으로 돌린다.
+int _mini(int a, int b) => a < b ? a : b;
+int _maxi(int a, int b) => a > b ? a : b;
+
+/// 카메라가 준 JPEG 을 처리한다. 무거우니 [processShotInBackground] 로 돌린다.
 ///
 /// 픽셀만 다시 그려서 PNG 로 만들기 때문에 위치정보 같은 EXIF 는 결과에 남지 않는다.
-ProcessedShot processShot(Uint8List jpeg, CaptureMode mode, {bool mirror = false}) {
-  final base = prepareBase(jpeg, mirror: mirror);
+ProcessedShot processShot(Uint8List jpeg, CaptureMode mode, {bool mirror = false, CaptureQuality quality = CaptureQuality.x2}) {
+  final spec = QualitySpec.of(quality);
+  final base = prepareBase(jpeg, mirror: mirror, quality: quality);
+  ProcessedShot image(img.Image out) => ProcessedShot(
+        mode: mode,
+        quality: quality,
+        png: img.encodePng(out, level: 4),
+        width: out.width,
+        height: out.height,
+        resWidth: base.width,
+        resHeight: base.height,
+      );
   switch (mode) {
     case CaptureMode.webcam:
-      final out = webcamFilter(base);
-      return ProcessedShot(mode: mode, png: img.encodePng(out), width: out.width, height: out.height);
+      return image(webcamFilter(base, spec));
     case CaptureMode.crt:
-      final out = crtFilter(base);
-      return ProcessedShot(mode: mode, png: img.encodePng(out), width: out.width, height: out.height);
+      return image(crtFilter(base, spec));
     case CaptureMode.ascii:
-      return ProcessedShot(mode: mode, asciiLines: asciiArt(base));
+      return ProcessedShot(
+        mode: mode,
+        quality: quality,
+        resWidth: base.width,
+        resHeight: base.height,
+        asciiLines: asciiArt(base, cols: spec.asciiCols, rows: spec.asciiRows),
+      );
   }
 }
 
@@ -57,20 +132,46 @@ ProcessedShot processShot(Uint8List jpeg, CaptureMode mode, {bool mirror = false
 /// 꼭 이렇게 맨 바깥(top-level) 함수에서 불러야 한다. 화면(State)의 async 메서드 안에서
 /// `Isolate.run(() => ...)` 을 만들면 클로저가 화면 전체를 붙잡고 넘어가려다
 /// "object is unsendable" 오류가 난다.
-Future<ProcessedShot> processShotInBackground(Uint8List jpeg, CaptureMode mode, {bool mirror = false}) {
-  return Isolate.run(() => processShot(jpeg, mode, mirror: mirror));
+Future<ProcessedShot> processShotInBackground(
+  Uint8List jpeg,
+  CaptureMode mode, {
+  bool mirror = false,
+  CaptureQuality quality = CaptureQuality.x2,
+}) {
+  return Isolate.run(() => processShot(jpeg, mode, mirror: mirror, quality: quality));
 }
 
-/// 방향을 바로잡고, 가운데를 4:3 가로로 잘라 320 x 240 으로 줄인다.
+/// 방향을 바로잡고, 가운데를 4:3 가로로 잘라 화질에 맞는 크기로 줄인다.
 /// (촬영 화면의 뷰파인더도 가운데 4:3 을 보여준다.)
-img.Image prepareBase(Uint8List jpeg, {bool mirror = false}) {
+img.Image prepareBase(Uint8List jpeg, {bool mirror = false, CaptureQuality quality = CaptureQuality.x2}) {
   final decoded = img.decodeImage(jpeg);
   if (decoded == null) {
     throw const FormatException('사진을 읽지 못했어요.');
   }
   var src = img.bakeOrientation(decoded);
   if (mirror) src = img.flipHorizontal(src);
-  return centerCropResize(src, baseWidth, baseHeight);
+  final spec = QualitySpec.of(quality);
+  var w = spec.baseWidth;
+  var h = spec.baseHeight;
+  if (quality == CaptureQuality.max) {
+    // 사진보다 크게 키우지는 않는다 (짝수로 맞춘다).
+    final crop = _cropSize(src.width, src.height);
+    if (crop.$1 < w) {
+      w = crop.$1 & ~1;
+      h = (w * 3 ~/ 4) & ~1;
+    }
+  }
+  return centerCropResize(src, w, h);
+}
+
+(int, int) _cropSize(int sw, int sh) {
+  var cw = sw;
+  var ch = (sw * 3 / 4).round();
+  if (ch > sh) {
+    ch = sh;
+    cw = (sh * 4 / 3).round();
+  }
+  return (cw, ch);
 }
 
 img.Image centerCropResize(img.Image src, int w, int h) {
@@ -88,6 +189,7 @@ img.Image centerCropResize(img.Image src, int w, int h) {
     width: cw,
     height: ch,
   );
+  if (cropped.width == w && cropped.height == h) return cropped;
   return img.copyResize(cropped, width: w, height: h, interpolation: img.Interpolation.average);
 }
 
@@ -100,11 +202,15 @@ int _hash(int x, int y) {
   return (h ^ (h >> 16)) & 0xFF;
 }
 
-/// WEBCAM: 큼직한 픽셀, 바랜 색, 따뜻한 색조, 자글자글한 노이즈.
-img.Image webcamFilter(img.Image base) {
-  const lowW = 160;
-  const lowH = 120;
-  final low = img.copyResize(base, width: lowW, height: lowH, interpolation: img.Interpolation.average);
+/// WEBCAM: 바랜 색, 따뜻한 색조, 자글자글한 노이즈. 2X 는 큼직한 픽셀, MAX 는 픽셀화 없이.
+img.Image webcamFilter(img.Image base, [QualitySpec? spec]) {
+  final s = spec ?? QualitySpec.of(CaptureQuality.x2);
+  final lowW = _mini(s.webcamLowWidth, base.width);
+  final lowH = _maxi(1, (lowW * base.height / base.width).round());
+  final low = (lowW == base.width && lowH == base.height)
+      ? base
+      : img.copyResize(base, width: lowW, height: lowH, interpolation: img.Interpolation.average);
+  final noise = s.webcamScale > 1 ? 20.0 : 14.0;
 
   final colors = Uint8List(lowW * lowH * 3);
   for (var y = 0; y < lowH; y++) {
@@ -126,8 +232,8 @@ img.Image webcamFilter(img.Image base) {
       r += 10;
       g += 3;
       b -= 8;
-      // 노이즈 ±10
-      final n = (_hash(x, y) / 255.0 - 0.5) * 20;
+      // 노이즈
+      final n = (_hash(x, y) / 255.0 - 0.5) * noise;
       final i = (y * lowW + x) * 3;
       colors[i] = _clamp(r + n);
       colors[i + 1] = _clamp(g + n);
@@ -135,13 +241,14 @@ img.Image webcamFilter(img.Image base) {
     }
   }
 
-  final out = img.Image(width: outWidth, height: outHeight);
-  const block = outWidth ~/ lowW; // 6
-  for (var y = 0; y < outHeight; y++) {
-    final ly = math.min(y ~/ block, lowH - 1);
-    for (var x = 0; x < outWidth; x++) {
-      final lx = math.min(x ~/ block, lowW - 1);
-      final i = (ly * lowW + lx) * 3;
+  final block = s.webcamScale;
+  final outW = lowW * block;
+  final outH = lowH * block;
+  final out = img.Image(width: outW, height: outH);
+  for (var y = 0; y < outH; y++) {
+    final ly = y ~/ block;
+    for (var x = 0; x < outW; x++) {
+      final i = (ly * lowW + x ~/ block) * 3;
       out.setPixelRgb(x, y, colors[i], colors[i + 1], colors[i + 2]);
     }
   }
@@ -149,7 +256,8 @@ img.Image webcamFilter(img.Image base) {
 }
 
 /// CRT: 진한 색, 가로 스캔라인, RGB 번짐, 가장자리 어둠, 둥근 화면 모서리.
-img.Image crtFilter(img.Image base) {
+img.Image crtFilter(img.Image base, [QualitySpec? spec]) {
+  final s = spec ?? QualitySpec.of(CaptureQuality.x2);
   final w = base.width;
   final h = base.height;
 
@@ -174,37 +282,43 @@ img.Image crtFilter(img.Image base) {
       src[i + 2] = b;
     }
   }
+  // 번지는 거리: 해상도가 높을수록 조금 더 멀리
+  final bleed = _maxi(1, w ~/ 480);
   final bled = Float32List(w * h * 3);
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
       final i = (y * w + x) * 3;
-      final l = (y * w + (x > 0 ? x - 1 : 0)) * 3;
+      final l = (y * w + (x >= bleed ? x - bleed : 0)) * 3;
       for (var c = 0; c < 3; c++) {
         bled[i + c] = src[i + c] * 0.75 + src[l + c] * 0.25;
       }
     }
   }
 
-  // 2) 3배로 키우면서 스캔라인·RGB 격자·비네팅·둥근 모서리
-  final out = img.Image(width: outWidth, height: outHeight);
-  const scale = outWidth ~/ baseWidth; // 3
-  const radius = 54.0;
-  final cx = outWidth / 2;
-  final cy = outHeight / 2;
-  for (var y = 0; y < outHeight; y++) {
-    final sy = math.min(y ~/ scale, h - 1);
-    final scan = (y % scale == scale - 1) ? 0.45 : 1.0;
+  // 2) 키우면서 스캔라인 · RGB 격자 · 비네팅 · 둥근 모서리
+  final scale = s.crtScale;
+  final outW = w * scale;
+  final outH = h * scale;
+  final out = img.Image(width: outW, height: outH);
+  // 스캔라인 간격: 키운 만큼(2X) 또는 3줄마다(MAX)
+  final period = scale > 1 ? scale : 3;
+  final radius = 54.0 * outW / 960;
+  final cx = outW / 2;
+  final cy = outH / 2;
+  for (var y = 0; y < outH; y++) {
+    final sy = _mini(y ~/ scale, h - 1);
+    final scan = (y % period == period - 1) ? 0.5 : 1.0;
     final dy = (y - cy) / cy;
-    for (var x = 0; x < outWidth; x++) {
-      if (!_insideRoundedRect(x.toDouble(), y.toDouble(), outWidth.toDouble(), outHeight.toDouble(), radius)) {
+    for (var x = 0; x < outW; x++) {
+      if (!_insideRoundedRect(x.toDouble(), y.toDouble(), outW.toDouble(), outH.toDouble(), radius)) {
         out.setPixelRgb(x, y, 0, 0, 0);
         continue;
       }
-      final sx = math.min(x ~/ scale, w - 1);
+      final sx = _mini(x ~/ scale, w - 1);
       final i = (sy * w + sx) * 3;
       final dx = (x - cx) / cx;
       final vignette = math.max(0.0, 1.0 - 0.5 * (dx * dx + dy * dy));
-      final sub = x % scale; // 0=R 1=G 2=B 강조
+      final sub = x % 3; // 0=R 1=G 2=B 강조
       final f = scan * vignette;
       out.setPixelRgb(
         x,
@@ -225,7 +339,7 @@ bool _insideRoundedRect(double x, double y, double w, double h, double r) {
 }
 
 /// ASCII: 밝기만 남겨 글자로 바꾼다. 어두운 곳은 빈칸, 밝은 곳은 @.
-List<String> asciiArt(img.Image base, {int cols = asciiCols, int rows = asciiRows}) {
+List<String> asciiArt(img.Image base, {int cols = 96, int rows = 44}) {
   final cellW = base.width / cols;
   final cellH = base.height / rows;
   final values = List<double>.filled(cols * rows, 0);

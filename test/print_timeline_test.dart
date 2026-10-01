@@ -38,8 +38,11 @@ void main() {
     expect(keys.length, lessThan(tl.frameCount ~/ 2));
   });
 
-  test('ASCII (22줄) 도 끝까지 출력된다', () {
-    const a = PrintTimeline(totalRows: 22);
-    expect(a.frameAt(a.frameCount - 1).rows, 22);
+  test('줄 수가 달라도(ASCII 44 · 58줄) 같은 길이로 끝까지 출력된다', () {
+    for (final n in [44, 58]) {
+      final a = PrintTimeline(totalRows: n);
+      expect(a.frameAt(a.frameCount - 1).rows, n);
+      expect(a.seconds, closeTo(tl.seconds, 0.001));
+    }
   });
 }

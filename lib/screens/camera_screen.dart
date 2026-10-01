@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../logic/capture_mode.dart';
 import '../theme/palette.dart';
@@ -25,6 +26,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _busy = false;
   CaptureMode _mode = CaptureMode.webcam;
 
+  /// 화질 (2X / MAX). 앱을 다시 켜도 기억한다.
+  CaptureQuality _quality = CaptureQuality.x2;
+  static const _qualityKey = 'quality';
+
   /// 마지막으로 찍은 사진 (왼쪽 아래 버튼으로 다시 본다).
   PrintedPhoto? _last;
 
@@ -39,6 +44,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (mounted) setState(() => _cursorOn = !_cursorOn);
     });
     _start();
+    _loadQuality();
+  }
+
+  Future<void> _loadQuality() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_qualityKey);
+      final q = CaptureQuality.values.where((q) => q.name == saved).firstOrNull;
+      if (q != null && mounted) setState(() => _quality = q);
+    } catch (_) {}
+  }
+
+  void _pickQuality(CaptureQuality q) {
+    if (q == _quality) return;
+    HapticFeedback.selectionClick();
+    setState(() => _quality = q);
+    SharedPreferences.getInstance().then((p) => p.setString(_qualityKey, q.name)).catchError((_) => false);
   }
 
   @override
@@ -92,7 +114,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (mounted) setState(() => _error = null);
       await old?.dispose();
 
-      final c = CameraController(cam, ResolutionPreset.high, enableAudio: false);
+      // veryHigh = 1920x1080. 가운데 4:3 을 자르면 1440x1080 (MAX 화질).
+      final c = CameraController(cam, ResolutionPreset.veryHigh, enableAudio: false);
       try {
         await c.initialize();
       } on CameraException catch (e) {
@@ -138,7 +161,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final mirror = c.description.lensDirection == CameraLensDirection.front;
       final result = await Navigator.of(context).push<PrintedPhoto>(
         MaterialPageRoute(
-          builder: (_) => PrintScreen(jpeg: bytes, mode: _mode, mirror: mirror, takenAt: DateTime.now()),
+          builder: (_) => PrintScreen(jpeg: bytes, mode: _mode, mirror: mirror, takenAt: DateTime.now(), quality: _quality),
         ),
       );
       if (result != null && mounted) setState(() => _last = result);
@@ -195,7 +218,27 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   ],
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 44,
+                    child: Text('RES', style: TextStyle(fontFamily: Palette.mono, fontSize: 11, color: Palette.dim)),
+                  ),
+                  for (final q in CaptureQuality.values) ...[
+                    if (q != CaptureQuality.values.first) const SizedBox(width: 8),
+                    Expanded(
+                      child: TermButton(
+                        label: '${q.label} · ${q.res}',
+                        filled: q == _quality,
+                        height: 34,
+                        onPressed: () => _pickQuality(q),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -255,7 +298,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 children: [
                   Container(width: 8, height: 8, decoration: const BoxDecoration(color: Palette.rec, shape: BoxShape.circle)),
                   const SizedBox(width: 6),
-                  const Text('REC 320x240', style: _overlay),
+                  Text('REC ${_quality.res}', style: _overlay),
                 ],
               ),
             ),

@@ -29,28 +29,36 @@ class PrintedPhoto {
 
 /// 출력 화면 → 결과 화면. 사진을 처리한 뒤 한 줄씩 "출력"하고, 저장·공유 버튼을 보여준다.
 class PrintScreen extends StatefulWidget {
-  const PrintScreen({super.key, required Uint8List this.jpeg, required this.mode, required this.mirror, required this.takenAt})
-      : photo = null;
+  const PrintScreen({
+    super.key,
+    required Uint8List this.jpeg,
+    required this.mode,
+    required this.mirror,
+    required this.takenAt,
+    this.quality = CaptureQuality.x2,
+  }) : photo = null;
 
   /// 이미 출력한 사진을 다시 볼 때 (애니메이션 없이 바로 결과).
   PrintScreen.done({super.key, required PrintedPhoto this.photo})
       : jpeg = null,
         mode = photo.shot.mode,
         mirror = false,
-        takenAt = photo.takenAt;
+        takenAt = photo.takenAt,
+        quality = photo.shot.quality;
 
   final Uint8List? jpeg;
   final CaptureMode mode;
   final bool mirror;
   final DateTime takenAt;
+  final CaptureQuality quality;
   final PrintedPhoto? photo;
 
   @override
   State<PrintScreen> createState() => _PrintScreenState();
 }
 
-/// 한 줄 출력에 걸리는 시간. 전체 2~3초.
-const _rowDelay = Duration(milliseconds: 105);
+/// 출력 애니메이션 전체 길이. 줄 수(화질 · 모드마다 다름)로 나눠 한 줄씩.
+const _printTotalMs = 2520;
 
 class _PrintScreenState extends State<PrintScreen> {
   final _cardKey = GlobalKey();
@@ -98,7 +106,7 @@ class _PrintScreenState extends State<PrintScreen> {
 
   Future<void> _process() async {
     try {
-      final shot = await processShotInBackground(widget.jpeg!, widget.mode, mirror: widget.mirror);
+      final shot = await processShotInBackground(widget.jpeg!, widget.mode, mirror: widget.mirror, quality: widget.quality);
       if (!mounted) return;
       setState(() => _photo = PrintedPhoto(shot: shot, fileName: _fileName, takenAt: widget.takenAt));
       _startPrinting();
@@ -112,10 +120,13 @@ class _PrintScreenState extends State<PrintScreen> {
 
   void _startPrinting() {
     final total = _photo!.shot.printRows;
-    _timer = Timer.periodic(_rowDelay, (t) {
+    final rowDelay = Duration(milliseconds: (_printTotalMs / total).round().clamp(20, 200).toInt());
+    // 줄이 많으면(ASCII MAX 58줄) 진동을 몇 줄에 한 번만.
+    final buzzEvery = (total / 24).ceil();
+    _timer = Timer.periodic(rowDelay, (t) {
       if (!mounted) return;
       setState(() => _rows++);
-      HapticFeedback.selectionClick();
+      if (_rows % buzzEvery == 0) HapticFeedback.selectionClick();
       if (_rows >= total) {
         t.cancel();
         HapticFeedback.lightImpact();
@@ -133,7 +144,8 @@ class _PrintScreenState extends State<PrintScreen> {
   /// 화면의 뷰어 창을 그대로 PNG 로 뜬다.
   Future<Uint8List> _renderCard() async {
     final boundary = _cardKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-    final image = await boundary.toImage(pixelRatio: 3);
+    // 사진 해상도만큼 크게 뜬다 (2X 약 4배, MAX 약 5배).
+    final image = await boundary.toImage(pixelRatio: _photo?.shot.exportPixelRatio ?? 3);
     try {
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       return data!.buffer.asUint8List();

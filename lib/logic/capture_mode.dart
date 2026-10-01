@@ -15,3 +15,20 @@ enum CaptureMode {
   /// 명령줄에 찍히는 이름 (`--mode=webcam`).
   String get flag => name;
 }
+
+/// 화질. 촬영 화면의 `2X` / `MAX` 스위치로 고르고, 사진과 .MP4 영상에 똑같이 쓴다.
+enum CaptureQuality {
+  /// 레트로 느낌을 살린 채 옛 웹캠(320x240)의 2배.
+  x2('2X', '640x480'),
+
+  /// 카메라가 주는 만큼 선명하게 (최대 1440x1080). 효과만 씌운다.
+  max('MAX', 'HD');
+
+  const CaptureQuality(this.label, this.res);
+
+  /// 버튼 이름
+  final String label;
+
+  /// 뷰파인더 `REC ...` 에 붙는 글자
+  final String res;
+}

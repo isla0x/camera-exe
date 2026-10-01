@@ -265,8 +265,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Widget _viewfinder() {
     final c = _controller;
     final now = DateTime.now();
+    // 세로 3:4. 폰을 눕혀 찍으면 사람이 보기엔 그대로 가로 4:3 이 되고, 사진도 가로로 나온다.
     return AspectRatio(
-      aspectRatio: 4 / 3,
+      aspectRatio: 3 / 4,
       child: Container(
         decoration: BoxDecoration(
           color: Palette.panel,

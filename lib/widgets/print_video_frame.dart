@@ -48,14 +48,31 @@ class PrintVideoFrame extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (frame.logLines >= 1) LogLine(r'C:\> capture --mode=' + shot.mode.flag),
-                  if (frame.logLines >= 2) const LogLine('frame grabbed ......', ok: true),
-                  if (frame.logLines >= 3) const LogLine('strip gps/exif .....', ok: true),
-                  if (printing) LogLine('printing $fileName', ok: frame.saved),
+                  // 로그 4줄 자리는 처음부터 잡아 둔다 (줄이 나타나도 사진이 움직이지 않게).
+                  _show(frame.logLines >= 1, LogLine(r'C:\> capture --mode=' + shot.mode.flag)),
+                  _show(frame.logLines >= 2, const LogLine('frame grabbed ......', ok: true)),
+                  _show(frame.logLines >= 3, const LogLine('strip gps/exif .....', ok: true)),
+                  _show(printing, LogLine('printing $fileName', ok: frame.saved)),
                   const SizedBox(height: 18),
-                  ResultCard(shot: shot, revealedRows: frame.rows, fileName: fileName, takenAt: takenAt),
-                  const SizedBox(height: 22),
-                  if (!frame.saved) ...[
+                  // 세로 사진이면 창이 길어지니, 남은 자리에 맞춰 줄인다.
+                  Expanded(
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: SizedBox(
+                          width: size.width - 44,
+                          child: ResultCard(shot: shot, revealedRows: frame.rows, fileName: fileName, takenAt: takenAt),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    height: 44,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!frame.saved) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -79,6 +96,11 @@ class PrintVideoFrame extends StatelessWidget {
                       ),
                       style: small.copyWith(color: Palette.fg),
                     ),
+                      ],
+                    ),
+                  ),
+                  // 아래 워터마크 자리
+                  const SizedBox(height: 76),
                 ],
               ),
             ),
@@ -105,6 +127,8 @@ class PrintVideoFrame extends StatelessWidget {
     );
   }
 }
+
+Widget _show(bool on, Widget child) => Opacity(opacity: on ? 1 : 0, child: child);
 
 /// 영상 파일 이름: IMG_0930_213300.BMP → IMG_0930_213300.MP4
 String videoName(String bmpName) => bmpName.replaceAll('.BMP', '.MP4');

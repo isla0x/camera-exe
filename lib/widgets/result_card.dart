@@ -72,7 +72,7 @@ class ResultCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                AspectRatio(aspectRatio: 4 / 3, child: _ShotView(shot: shot, revealedRows: revealedRows, takenAt: takenAt)),
+                AspectRatio(aspectRatio: shot.aspect, child: _ShotView(shot: shot, revealedRows: revealedRows, takenAt: takenAt)),
                 const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,

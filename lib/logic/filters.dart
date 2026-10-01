@@ -30,6 +30,9 @@ class ProcessedShot {
   final int resWidth;
   final int resHeight;
 
+  /// 가로/세로 비율 (가로 사진 4:3, 세로 사진 3:4)
+  double get aspect => resWidth > 0 && resHeight > 0 ? resWidth / resHeight : 4 / 3;
+
   /// 출력 애니메이션이 몇 줄로 나눠서 보여줄지.
   int get printRows => 24;
 
@@ -115,8 +118,8 @@ Future<ProcessedShot> processShotInBackground(
   return Isolate.run(() => processShot(jpeg, mode, mirror: mirror, quality: quality));
 }
 
-/// 방향을 바로잡고, 가운데를 4:3 가로로 잘라 화질에 맞는 크기로 줄인다.
-/// (촬영 화면의 뷰파인더도 가운데 4:3 을 보여준다.)
+/// 방향을 바로잡고, 가운데를 4:3 (세로 사진이면 3:4) 로 잘라 화질에 맞는 크기로 줄인다.
+/// (촬영 화면의 뷰파인더도 가운데 3:4 를 보여준다. 폰을 눕히면 그대로 4:3 이 된다.)
 img.Image prepareBase(Uint8List jpeg, {bool mirror = false, CaptureQuality quality = CaptureQuality.x2}) {
   final decoded = img.decodeImage(jpeg);
   if (decoded == null) {
@@ -125,25 +128,30 @@ img.Image prepareBase(Uint8List jpeg, {bool mirror = false, CaptureQuality quali
   var src = img.bakeOrientation(decoded);
   if (mirror) src = img.flipHorizontal(src);
   final spec = QualitySpec.of(quality);
-  var w = spec.baseWidth;
-  var h = spec.baseHeight;
+  // 폰을 세워 찍으면 세로(3:4), 눕혀 찍으면 가로(4:3). 카메라가 폰 방향을 사진에 적어 주고
+  // bakeOrientation 이 그 방향대로 돌려 놓았으니, 사진 모양만 보면 된다.
+  final portrait = src.height > src.width;
+  final tw = portrait ? spec.baseHeight : spec.baseWidth;
+  final th = portrait ? spec.baseWidth : spec.baseHeight;
+  var w = tw, h = th;
   if (quality == CaptureQuality.max) {
     // 사진보다 크게 키우지는 않는다 (짝수로 맞춘다).
-    final crop = _cropSize(src.width, src.height);
+    final crop = _cropSize(src.width, src.height, tw / th);
     if (crop.$1 < w) {
       w = crop.$1 & ~1;
-      h = (w * 3 ~/ 4) & ~1;
+      h = (w * th / tw).round() & ~1;
     }
   }
   return centerCropResize(src, w, h);
 }
 
-(int, int) _cropSize(int sw, int sh) {
+/// [aspect] (가로/세로) 로 가운데를 자를 때의 크기.
+(int, int) _cropSize(int sw, int sh, double aspect) {
   var cw = sw;
-  var ch = (sw * 3 / 4).round();
+  var ch = (sw / aspect).round();
   if (ch > sh) {
     ch = sh;
-    cw = (sh * 4 / 3).round();
+    cw = (sh * aspect).round();
   }
   return (cw, ch);
 }
@@ -179,7 +187,8 @@ int _hash(int x, int y) {
 /// WEBCAM: 바랜 색, 따뜻한 색조, 자글자글한 노이즈. 2X 는 큼직한 픽셀, MAX 는 픽셀화 없이.
 img.Image webcamFilter(img.Image base, [QualitySpec? spec]) {
   final s = spec ?? QualitySpec.of(CaptureQuality.x2);
-  final lowW = _mini(s.webcamLowWidth, base.width);
+  // 기준 크기에 대한 비율로 줄인다 (세로 사진이면 가로가 더 좁다).
+  final lowW = _mini(base.width, _maxi(1, (base.width * s.webcamLowWidth / s.baseWidth).round()));
   final lowH = _maxi(1, (lowW * base.height / base.width).round());
   final low = (lowW == base.width && lowH == base.height)
       ? base

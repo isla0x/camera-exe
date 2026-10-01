@@ -18,33 +18,40 @@ Uint8List _portraitJpeg() {
 }
 
 void main() {
-  test('2X: 가운데를 4:3 가로로 잘라 640x480 이 된다', () {
-    final base = prepareBase(_portraitJpeg());
-    expect(base.width, 640);
-    expect(base.height, 480);
+  test('2X: 세워 찍은 사진은 세로 480x640, 눕혀 찍은 사진은 가로 640x480', () {
+    final p = prepareBase(_portraitJpeg());
+    expect([p.width, p.height], [480, 640]);
+    final l = prepareBase(_flatJpeg(100));
+    expect([l.width, l.height], [640, 480]);
   });
 
-  test('MAX: 사진보다 크게 키우지 않는다 (300x400 → 가운데 300x225 근처, 짝수)', () {
+  test('MAX: 사진보다 크게 키우지 않는다 (300x400 세로 → 그대로 3:4, 짝수)', () {
     final base = prepareBase(_portraitJpeg(), quality: CaptureQuality.max);
     expect(base.width, lessThanOrEqualTo(300));
     expect(base.width.isEven && base.height.isEven, isTrue);
-    expect((base.width / base.height - 4 / 3).abs(), lessThan(0.02));
+    expect((base.width / base.height - 3 / 4).abs(), lessThan(0.02));
   });
 
-  test('2X: WEBCAM 은 320x240 픽셀을 4배로 키운 1280x960', () {
+  test('MAX: 폰 카메라 세로 1080x1920 → 1080x1440', () {
+    final base = prepareBase(_bigJpeg(portrait: true), quality: CaptureQuality.max);
+    expect([base.width, base.height], [1080, 1440]);
+  });
+
+  test('2X: WEBCAM 은 절반으로 줄인 픽셀을 4배로 키운다 (세로 960x1280)', () {
     final shot = processShot(_portraitJpeg(), CaptureMode.webcam);
     final decoded = img.decodePng(shot.png!)!;
-    expect(decoded.width, 1280);
-    expect(decoded.height, 960);
-    expect(shot.resWidth, 640);
-    expect(shot.resHeight, 480);
+    expect(decoded.width, 960);
+    expect(decoded.height, 1280);
+    expect(shot.resWidth, 480);
+    expect(shot.resHeight, 640);
+    expect(shot.aspect, closeTo(3 / 4, 0.001));
     expect(shot.exportPixelRatio, greaterThan(3));
   });
 
-  test('2X: BUTTER, TRIP 은 기준 크기 640x480 그대로', () {
+  test('2X: BUTTER, TRIP 은 기준 크기 그대로 (세로 480x640)', () {
     for (final mode in [CaptureMode.butter, CaptureMode.trip]) {
       final decoded = img.decodePng(processShot(_portraitJpeg(), mode).png!)!;
-      expect([decoded.width, decoded.height], [640, 480]);
+      expect([decoded.width, decoded.height], [480, 640]);
     }
   });
 
@@ -62,7 +69,7 @@ void main() {
     final base = prepareBase(_portraitJpeg());
     final out = butterFilter(base);
     expect(_mean(out), greaterThan(_mean(base)));
-    final darkest = out.getPixel(320, 0); // 맨 위 = 원본에서 가장 어두운 줄
+    final darkest = out.getPixel(240, 0); // 맨 위 = 원본에서 가장 어두운 줄
     expect(darkest.r, greaterThan(10));
   });
 
@@ -97,12 +104,12 @@ void main() {
   });
 }
 
-/// 폰 카메라(veryHigh)처럼 1920x1080 가로 사진.
-Uint8List _bigJpeg() {
-  final src = img.Image(width: 1920, height: 1080);
+/// 폰 카메라(veryHigh)처럼 1920x1080 가로 (또는 1080x1920 세로) 사진.
+Uint8List _bigJpeg({bool portrait = false}) {
+  final src = portrait ? img.Image(width: 1080, height: 1920) : img.Image(width: 1920, height: 1080);
   for (var y = 0; y < src.height; y++) {
     for (var x = 0; x < src.width; x++) {
-      src.setPixelRgb(x, y, x * 255 ~/ 1919, y * 255 ~/ 1079, 128);
+      src.setPixelRgb(x, y, x * 255 ~/ (src.width - 1), y * 255 ~/ (src.height - 1), 128);
     }
   }
   return img.encodeJpg(src, quality: 90);

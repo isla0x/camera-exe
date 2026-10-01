@@ -238,30 +238,30 @@ img.Image _fromRgb(int w, int h, Uint8List rgb) =>
     img.Image.fromBytes(width: w, height: h, bytes: rgb.buffer, numChannels: 3);
 
 /// 흐리게 뭉갠 사진 (빛 번짐용). 작게 줄여 흐린 뒤 다시 키운다.
-Uint8List _blurred(img.Image base) {
+Uint8List _blurred(img.Image base, {int radius = 3}) {
   final w = base.width, h = base.height;
   var small = img.copyResize(base, width: _maxi(8, w ~/ 8), height: _maxi(6, h ~/ 8), interpolation: img.Interpolation.average);
-  small = img.gaussianBlur(small, radius: 3);
+  small = img.gaussianBlur(small, radius: radius);
   final big = img.copyResize(small, width: w, height: h, interpolation: img.Interpolation.linear);
   return big.getBytes(order: img.ChannelOrder.rgb);
 }
 
-/// BUTTER: 요즘 유행하는 뽀샤시 버터 느낌.
-/// 살짝 흐리게 → 밝은 곳이 빛처럼 번지고 → 밝고 부드럽게 → 검정을 띄우고 → 크림색으로.
+/// BUTTER: 요즘 유행하는 뽀샤시 버터 느낌. 안개가 낀 듯 뽀얗게.
+/// 흐리게 → 밝은 곳이 빛처럼 번지고 → 밝게 → 우윳빛 안개 → 채도 낮춤 → 크림색.
 img.Image butterFilter(img.Image base) {
   final w = base.width, h = base.height;
   final src = base.getBytes(order: img.ChannelOrder.rgb);
-  final blur = _blurred(base);
+  final blur = _blurred(base, radius: 4);
   final out = Uint8List(w * h * 3);
   for (var i = 0; i < w * h * 3; i += 3) {
     var r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255;
     final br = blur[i] / 255, bg = blur[i + 1] / 255, bb = blur[i + 2] / 255;
-    // 1) 살짝 흐리게 (soft focus)
-    r = r * 0.75 + br * 0.25;
-    g = g * 0.75 + bg * 0.25;
-    b = b * 0.75 + bb * 0.25;
+    // 1) 흐리게 (soft focus)
+    r = r * 0.65 + br * 0.35;
+    g = g * 0.65 + bg * 0.35;
+    b = b * 0.65 + bb * 0.35;
     // 2) 밝은 곳이 번지는 빛 (흐린 그림의 밝은 부분을 screen 으로 더한다)
-    final hl = _unit((_luma(br, bg, bb) - 0.45) / 0.55) * 0.7;
+    final hl = _unit((_luma(br, bg, bb) - 0.35) / 0.65) * 0.85;
     r = 1 - (1 - r) * (1 - br * hl);
     g = 1 - (1 - g) * (1 - bg * hl);
     b = 1 - (1 - b) * (1 - bb * hl);
@@ -269,20 +269,20 @@ img.Image butterFilter(img.Image base) {
     r += (1 - r) * r * 0.45;
     g += (1 - g) * g * 0.45;
     b += (1 - b) * b * 0.45;
-    // 4) 검정을 띄우고 대비를 낮춘다
-    r = 0.07 + r * 0.9;
-    g = 0.07 + g * 0.9;
-    b = 0.07 + b * 0.9;
-    // 5) 채도 90%
+    // 4) 안개: 전체를 우윳빛 쪽으로 (검정이 뜨고 대비가 낮아진다)
+    r = r * 0.80 + 1.00 * 0.20;
+    g = g * 0.80 + 0.97 * 0.20;
+    b = b * 0.80 + 0.93 * 0.20;
+    // 5) 채도 85%
     final l = _luma(r, g, b);
-    r = l + (r - l) * 0.9;
-    g = l + (g - l) * 0.9;
-    b = l + (b - l) * 0.9;
+    r = l + (r - l) * 0.85;
+    g = l + (g - l) * 0.85;
+    b = l + (b - l) * 0.85;
     // 6) 버터 색: 밝을수록 크림색 쪽으로
-    final k = l * 0.30;
-    r = (r * (1 - k) + 1.00 * k) * 1.03;
+    final k = l * 0.22;
+    r = (r * (1 - k) + 1.00 * k) * 1.02;
     g = (g * (1 - k) + 0.95 * k) * 1.00;
-    b = (b * (1 - k) + 0.80 * k) * 0.92;
+    b = (b * (1 - k) + 0.80 * k) * 0.94;
     out[i] = _clamp(r * 255);
     out[i + 1] = _clamp(g * 255);
     out[i + 2] = _clamp(b * 255);
